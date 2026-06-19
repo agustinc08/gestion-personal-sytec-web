@@ -966,7 +966,7 @@ export default function AdminDashboard({
       )}
 
       {/* Admin Tabs */}
-      <div className="flex border-b border-gray-200 mb-8 overflow-x-auto scrollbar-none gap-2">
+      <div className="flex flex-wrap border-b border-gray-200 mb-8 gap-x-2 gap-y-1">
         <button
           onClick={() => setAdminTab('employees')}
           className={`px-5 py-3 font-semibold text-sm border-b-2 flex items-center gap-2 whitespace-nowrap transition-all duration-200 ${
@@ -1045,7 +1045,7 @@ export default function AdminDashboard({
           }`}
         >
           <User className="w-4 h-4 text-emerald-500" />
-          Mi Perfil ({currentAdmin.name})
+          Mi Perfil
         </button>
       </div>
 
@@ -1624,20 +1624,26 @@ export default function AdminDashboard({
                       <div className="mt-3 flex flex-wrap gap-2">
                         <button type="button" onClick={() => startEditLicenseArticle(article)} className="text-[10px] bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 px-2 py-1 rounded-lg font-bold">Editar</button>
                         <label className="text-[10px] bg-white border border-slate-200 hover:bg-indigo-50 text-indigo-700 px-2 py-1 rounded-lg font-bold cursor-pointer">
-                          Subir PDF
+                          Subir plantilla PDF
                           <input
                             type="file"
-                            accept="application/pdf"
+                            accept=".pdf,application/pdf"
                             className="hidden"
                             onChange={(e) => {
                               const file = e.target.files?.[0];
                               if (!file || !onUploadLicenseTemplate) return;
+                              if (file.type !== 'application/pdf' || !file.name.toLowerCase().endsWith('.pdf')) {
+                                triggerAlert('error', 'La plantilla debe ser un archivo PDF.');
+                                e.currentTarget.value = '';
+                                return;
+                              }
                               Promise.resolve(onUploadLicenseTemplate(article.id, file))
                                 .then(() => triggerAlert('success', 'Plantilla PDF cargada.'))
                                 .catch(() => triggerAlert('error', 'No se pudo subir la plantilla PDF.'));
                             }}
                           />
                         </label>
+                        <span className="self-center text-[10px] text-slate-500">Formatos permitidos: PDF</span>
                         <button type="button" onClick={() => setSelectedArticleId(article.id)} className="text-[10px] bg-indigo-600 text-white px-2 py-1 rounded-lg font-bold">Configurar campos</button>
                         <button type="button" onClick={() => handleTestArticlePdf(article)} className="text-[10px] bg-emerald-600 text-white px-2 py-1 rounded-lg font-bold">Generar prueba</button>
                       </div>
@@ -3699,7 +3705,8 @@ export default function AdminDashboard({
                         type="button"
                         onClick={() => document.getElementById('admin-avatar-upload-file')?.click()}
                         className="absolute bottom-1 right-1 bg-indigo-600 text-white p-2 rounded-xl shadow hover:bg-indigo-700 transition-colors"
-                        title="Subir foto"
+                        title="Cambiar foto"
+                        aria-label="Cambiar foto"
                       >
                         <Upload className="w-4 h-4" />
                       </button>
@@ -3725,6 +3732,7 @@ export default function AdminDashboard({
                 </div>
                 <div className="min-w-0">
                   <h3 className="text-xl font-black text-slate-900">Mi Perfil</h3>
+                  <p className="text-xs text-slate-500 mt-1">Datos personales</p>
                   <p className="text-sm font-bold text-slate-700 mt-1">{currentAdmin.name}</p>
                   <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-bold">
                     <span className="bg-indigo-50 border border-indigo-100 text-indigo-700 rounded px-2 py-1">Rol: Administrador</span>

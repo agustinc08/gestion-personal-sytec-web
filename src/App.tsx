@@ -13,6 +13,29 @@ import LoginScreen from './components/LoginScreen';
 import { DEPENDENCIES, INITIAL_STRIKE_CONFIG, LAWS_ARTICLES_RULES } from './data/mockData';
 import { Employee, LicenseArticle, LicenseRequest, LicenseRule, Project, ProjectUpdate, StrikeConfig, WorkLog } from './types';
 
+function SessionAvatar({ src, name }: { src?: string; name: string }) {
+  const [imageFailed, setImageFailed] = useState(false);
+
+  useEffect(() => setImageFailed(false), [src]);
+
+  if (!src || imageFailed) {
+    return (
+      <div className="w-10 h-10 bg-rose-700/85 rounded-xl text-white shadow-inner flex items-center justify-center shrink-0">
+        <User className="w-5 h-5 text-white" />
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={`Foto de perfil de ${name}`}
+      className="w-10 h-10 rounded-xl object-cover bg-slate-800 border border-slate-700 shadow-inner shrink-0"
+      onError={() => setImageFailed(true)}
+    />
+  );
+}
+
 export default function App() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [workLogs, setWorkLogs] = useState<WorkLog[]>([]);
@@ -302,21 +325,19 @@ export default function App() {
       <div className="bg-slate-900 text-white p-3.5 sm:px-8 border-b border-slate-850 shadow-md">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="bg-rose-700/85 p-2 rounded-xl text-white shadow-inner flex items-center justify-center">
-              <User className="w-5 h-5 text-white" />
-            </div>
+            <SessionAvatar src={currentEmployee.avatar} name={currentEmployee.name} />
             <div className="text-center sm:text-left">
               <h1 className="text-sm font-black tracking-tight flex flex-wrap items-center justify-center sm:justify-start gap-2">
-                Sesion Iniciada: <span className="text-indigo-300 font-bold">{currentEmployee.name}</span>
+                Sesión iniciada: <span className="text-indigo-300 font-bold">{currentEmployee.name}</span>
                 <span className={`font-mono text-[9px] uppercase font-bold px-2 py-0.5 rounded border ${currentEmployee.isAdmin ? 'bg-red-500/25 border-red-500/30 text-rose-300' : 'bg-emerald-500/25 border-emerald-500/30 text-emerald-300'}`}>
-                  {currentEmployee.isAdmin ? 'Prosecretaria Administrativa / Direccion' : `Agente: ${currentEmployee.position || 'Oficial'}`}
+                  {currentEmployee.isAdmin ? 'Prosecretaría Administrativa / Dirección' : `Agente: ${currentEmployee.position || 'Oficial'}`}
                 </span>
               </h1>
               <p className="text-[10px] text-slate-400 mt-0.5 sm:mt-0">CUIL de Acceso: <span className="font-mono">{currentEmployee.cuil}</span> | Dependencia: {currentEmployee.dependency}</p>
             </div>
           </div>
           <button onClick={handleLogout} className="px-4 py-2 bg-slate-800 hover:bg-rose-700 hover:text-white text-slate-100 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-sm border border-slate-700">
-            <LogOut className="w-4 h-4" /> Cerrar Sesion
+            <LogOut className="w-4 h-4" /> Cerrar sesión
           </button>
         </div>
       </div>

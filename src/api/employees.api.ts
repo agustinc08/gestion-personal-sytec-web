@@ -1,11 +1,9 @@
 import { Employee } from '../types';
-import { api, API_BASE_URL } from './client';
+import { api, resolveApiFileUrl } from './client';
 
 const normalizeEmployee = (employee: Employee) => ({
   ...employee,
-  avatar: employee.avatar?.startsWith('/uploads/')
-    ? `${API_BASE_URL.replace(/\/$/, '')}${employee.avatar}`
-    : employee.avatar,
+  avatar: resolveApiFileUrl(employee.avatar),
 });
 
 export const employeesApi = {

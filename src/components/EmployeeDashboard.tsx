@@ -19,9 +19,11 @@ interface EmployeeDashboardProps {
   licenseRules: LicenseRule[];
   strikeConfig: StrikeConfig;
   onAddWorkLog: (log: Omit<WorkLog, 'id'>) => Promise<WorkLog> | WorkLog;
+  onUpdateWorkLog: (id: string, payload: Partial<WorkLog>) => Promise<WorkLog>;
   onUpdateProject?: (proj: Project) => void;
   onAddProjectUpdate?: (projectId: string, update: string | (Partial<ProjectUpdate> & { content: string })) => Promise<Project> | void;
   onAddLicenseRequest: (req: Omit<LicenseRequest, 'id' | 'status' | 'dateRequested'>) => any;
+  onDeleteLicenseRequest: (id: string) => Promise<void>;
   onUpdateAvatar: (employeeId: string, avatarUrl: string | File) => Promise<Employee> | void;
   onUpdateEmployee: (emp: Employee) => void;
   onChangePassword?: (currentPassword: string, newPassword: string) => Promise<void>;
@@ -37,9 +39,11 @@ export default function EmployeeDashboard({
   licenseRules,
   strikeConfig,
   onAddWorkLog,
+  onUpdateWorkLog,
   onUpdateProject,
   onAddProjectUpdate,
   onAddLicenseRequest,
+  onDeleteLicenseRequest,
   onUpdateAvatar,
   onUpdateEmployee,
   onChangePassword,
@@ -49,6 +53,8 @@ export default function EmployeeDashboard({
 
   // Selected project state
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [projectTimelinePage, setProjectTimelinePage] = useState(1);
+  useEffect(() => setProjectTimelinePage(1), [selectedProjectId]);
   const [newUpdateText, setNewUpdateText] = useState('');
   const [newUpdateTitle, setNewUpdateTitle] = useState('');
   const [newUpdateStatus, setNewUpdateStatus] = useState('');
@@ -91,12 +97,32 @@ export default function EmployeeDashboard({
   const [dailyProjectFilter, setDailyProjectFilter] = useState('todos');
   const [selectedCalendarDate, setSelectedCalendarDate] = useState(new Date().toISOString().split('T')[0]);
   const [isSavingWorkLog, setIsSavingWorkLog] = useState(false);
+  const [editingWorkLogId, setEditingWorkLogId] = useState<string | null>(null);
   const workLogFormRef = useRef<HTMLDivElement>(null);
 
   // Password change states
   const [currentPasswordInput, setCurrentPasswordInput] = useState('');
   const [newPasswordInput, setNewPasswordInput] = useState('');
   const [confirmNewPasswordInput, setConfirmNewPasswordInput] = useState('');
+  const initialNameParts = employee.name.trim().split(/\s+/);
+  const [profileFirstName, setProfileFirstName] = useState(initialNameParts.shift() || '');
+  const [profileLastName, setProfileLastName] = useState(initialNameParts.join(' '));
+  const [profileEmail, setProfileEmail] = useState(employee.email || '');
+  const [profileEditing, setProfileEditing] = useState(false);
+
+  useEffect(() => {
+    if (profileEditing) return;
+    const parts = employee.name.trim().split(/\s+/);
+    setProfileFirstName(parts.shift() || ''); setProfileLastName(parts.join(' ')); setProfileEmail(employee.email || '');
+  }, [employee.name, employee.email, profileEditing]);
+
+  const saveProfile = async (event: React.FormEvent) => {
+    event.preventDefault();
+    try {
+      await Promise.resolve(onUpdateEmployee({ ...employee, name: `${profileFirstName} ${profileLastName}`.trim(), email: profileEmail.trim() }));
+      setProfileEditing(false); triggerAlert('success', 'Perfil actualizado correctamente');
+    } catch { triggerAlert('error', 'No se pudo actualizar el perfil'); }
+  };
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -193,6 +219,12 @@ export default function EmployeeDashboard({
     setOverrideDate(true);
     workLogFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
+  const resetWorkLogForm = () => {
+    setEditingWorkLogId(null); setLogTitle(''); setLogDescription(''); setLogMode('presencial'); setLogProjectId(''); setLogActivityType('PROJECT'); setLogHours(''); setOverrideDate(false); setLogDate(new Date().toISOString().split('T')[0]);
+  };
+  const editWorkLog = (log: WorkLog) => {
+    setEditingWorkLogId(log.id); setLogTitle(log.title); setLogDescription(log.description); setLogMode(log.mode); setLogProjectId(log.projectId || ''); setLogActivityType(log.activityType || 'PROJECT'); setLogHours(log.hours === undefined ? '' : String(log.hours)); setLogDate(log.date); setOverrideDate(true); workLogFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
   const getDeadlineLabel = (project: Project) => {
     if (!project.deadline) return 'Sin fecha límite';
     const today = new Date();
@@ -273,7 +305,7 @@ export default function EmployeeDashboard({
     const submittedDate = overrideDate ? logDate : new Date().toISOString().split('T')[0];
     setIsSavingWorkLog(true);
     try {
-      await Promise.resolve(onAddWorkLog({
+      const payload = {
         employeeId: employee.id,
         projectId: submittedProjectId || undefined,
         title: submittedTitle,
@@ -282,25 +314,22 @@ export default function EmployeeDashboard({
         mode: logMode,
         activityType: logActivityType,
         hours: logHours ? Number(logHours) : undefined,
-      }));
+      };
+      if (editingWorkLogId) await onUpdateWorkLog(editingWorkLogId, payload);
+      else await Promise.resolve(onAddWorkLog(payload));
 
-      setLogTitle('');
-      setLogDescription('');
-      setLogMode('presencial');
-      setLogProjectId('');
-      setLogActivityType('PROJECT');
-      setLogHours('');
-      setOverrideDate(false);
+      const wasEditing = !!editingWorkLogId;
+      resetWorkLogForm();
       setSelectedCalendarDate(submittedDate);
 
       const match = projects.find(p => p.id === submittedProjectId || (p.name || '').toLowerCase().trim() === (submittedTitle || '').toLowerCase().trim());
       if (match) {
-        triggerAlert('success', `Trabajo diario guardado y vinculado al proyecto "${match.name}".`);
+        triggerAlert('success', wasEditing ? 'Parte diario actualizado correctamente.' : `Trabajo diario guardado y vinculado al proyecto "${match.name}".`);
       } else {
-        triggerAlert('success', 'Trabajo diario registrado con éxito.');
+        triggerAlert('success', wasEditing ? 'Parte diario actualizado correctamente.' : 'Trabajo diario registrado con éxito.');
       }
-    } catch {
-      triggerAlert('error', 'No se pudieron cargar los registros.');
+    } catch (error: any) {
+      triggerAlert('error', error?.response?.data?.message || 'No se pudieron guardar los cambios.');
     } finally {
       setIsSavingWorkLog(false);
     }
@@ -519,8 +548,9 @@ export default function EmployeeDashboard({
             {/* Form Input */}
             <div ref={workLogFormRef} className="lg:col-span-5 bg-white p-6 rounded-2xl border border-gray-150 shadow-sm self-start">
               <h3 className="text-lg font-bold text-gray-900 mb-5 flex items-center gap-2">
-                <Plus className="w-5 h-5 text-indigo-600" /> Cargar Trabajo Diario
+                <Plus className="w-5 h-5 text-indigo-600" /> {editingWorkLogId ? 'Editar parte diario' : 'Cargar Trabajo Diario'}
               </h3>
+              {hasLogToday && !editingWorkLogId && <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800">Ya cargaste tu parte diario de hoy. Podés editarlo. <button type="button" onClick={() => { const today = myWorkLogs.find((log) => log.date === todayStr); if (today) editWorkLog(today); }} className="ml-1 font-bold underline">Editar parte de hoy</button></div>}
               
               <form onSubmit={handleLogSubmit} className="space-y-4">
                 <div>
@@ -686,13 +716,12 @@ export default function EmployeeDashboard({
                   ></textarea>
                 </div>
 
-                <button
-                  type="submit"
-                  disabled={isSavingWorkLog}
-                  className="w-full cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm py-3.5 px-4 rounded-xl transition-all shadow-md hover:shadow-indigo-100 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  <CheckCircle className="w-4 h-4" /> {isSavingWorkLog ? 'Guardando...' : 'Registrar Jornada Laboral'}
-                </button>
+                <div className="flex gap-2">
+                  <button type="submit" disabled={isSavingWorkLog} className="flex-1 cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm py-3.5 px-4 rounded-xl transition-all shadow-md disabled:opacity-60">
+                    {isSavingWorkLog ? 'Guardando...' : editingWorkLogId ? 'Guardar cambios' : 'Registrar Jornada Laboral'}
+                  </button>
+                  {editingWorkLogId && <button type="button" onClick={resetWorkLogForm} className="rounded-xl border px-4 text-xs font-bold">Cancelar edición</button>}
+                </div>
               </form>
             </div>
 
@@ -802,6 +831,7 @@ export default function EmployeeDashboard({
                           {linkedProject && <span className="bg-emerald-50 border border-emerald-100 text-emerald-700 rounded px-2 py-1">{linkedProject.name}</span>}
                           {log.activityType && <span className="bg-indigo-50 border border-indigo-100 text-indigo-700 rounded px-2 py-1">{activityTypeLabel(log.activityType)}</span>}
                           {log.hours !== undefined && <span className="bg-slate-50 border border-slate-200 text-slate-700 rounded px-2 py-1">{log.hours} h</span>}
+                          <button type="button" onClick={() => editWorkLog(log)} className="ml-auto rounded border border-indigo-200 bg-indigo-50 px-2 py-1 text-indigo-700">Editar</button>
                         </div>
                       </div>
                     );
@@ -953,6 +983,7 @@ export default function EmployeeDashboard({
                   mode: undefined
                 }))
               ].sort((a, b) => b.date.localeCompare(a.date));
+              const timelinePages = Math.max(1, Math.ceil(combinedTimeline.length / 10));
 
               return (
                 <div className="space-y-6 animate-fade-in w-full">
@@ -1131,13 +1162,15 @@ export default function EmployeeDashboard({
                         </span>
                       </div>
 
+                      {combinedTimeline.length > 10 && <div className="mb-4 flex items-center justify-end gap-2 text-xs"><button type="button" disabled={projectTimelinePage === 1} onClick={() => setProjectTimelinePage((page) => page - 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Anterior</button><strong>Página {projectTimelinePage} de {timelinePages}</strong><button type="button" disabled={projectTimelinePage === timelinePages} onClick={() => setProjectTimelinePage((page) => page + 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Siguiente</button></div>}
+
                       {combinedTimeline.length === 0 ? (
                         <div className="py-12 text-center text-slate-400 font-sans">
                           <p className="text-xs italic">Aún no se registran partes diarios ni comunicaciones oficiales.</p>
                         </div>
                       ) : (
                         <div className="relative border-l border-indigo-100 pl-4 ml-1.5 space-y-5">
-                          {combinedTimeline.map((item) => {
+                          {combinedTimeline.slice((projectTimelinePage - 1) * 10, projectTimelinePage * 10).map((item) => {
                             const isAdminType = item.type === 'admin';
                             return (
                               <div key={item.id} className="relative">
@@ -1569,6 +1602,10 @@ export default function EmployeeDashboard({
                         }`}>
                           {licenseStatusLabel(req.status)}
                         </span>
+                        {req.status === 'pendiente' && <button type="button" onClick={() => {
+                          if (!window.confirm('¿Seguro que querés eliminar esta solicitud de licencia?')) return;
+                          onDeleteLicenseRequest(req.id).then(() => triggerAlert('success', 'Solicitud eliminada correctamente')).catch((error: any) => triggerAlert('error', error?.response?.data?.message || 'No tenés permisos para eliminar esta solicitud'));
+                        }} className="mt-2 block text-xs font-bold text-rose-600 underline">Eliminar</button>}
                       </div>
                     </div>
                   ))}
@@ -1824,6 +1861,19 @@ export default function EmployeeDashboard({
                       </div>
                     </div>
                   </div>
+
+                  <form onSubmit={saveProfile} className="space-y-3 rounded-2xl border border-slate-100 p-4">
+                    <div className="flex items-center justify-between"><strong className="text-sm">Información personal</strong>{!profileEditing && <button type="button" onClick={() => setProfileEditing(true)} className="text-xs font-bold text-indigo-700">Editar</button>}</div>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <label className="text-[10px] font-bold uppercase text-slate-500">Nombre<input disabled={!profileEditing} value={profileFirstName} onChange={(event) => setProfileFirstName(event.target.value)} required className="mt-1 w-full rounded-xl border px-3 py-2 text-xs disabled:bg-slate-100" /></label>
+                      <label className="text-[10px] font-bold uppercase text-slate-500">Apellido<input disabled={!profileEditing} value={profileLastName} onChange={(event) => setProfileLastName(event.target.value)} className="mt-1 w-full rounded-xl border px-3 py-2 text-xs disabled:bg-slate-100" /></label>
+                      <label className="text-[10px] font-bold uppercase text-slate-500 sm:col-span-2">Email<input type="email" disabled={!profileEditing} value={profileEmail} onChange={(event) => setProfileEmail(event.target.value)} className="mt-1 w-full rounded-xl border px-3 py-2 text-xs disabled:bg-slate-100" /></label>
+                      <label className="text-[10px] font-bold uppercase text-slate-500">CUIL<input disabled value={employee.cuil} className="mt-1 w-full rounded-xl border bg-slate-100 px-3 py-2 text-xs" /></label>
+                      <label className="text-[10px] font-bold uppercase text-slate-500">Rol<input disabled value="Empleado" className="mt-1 w-full rounded-xl border bg-slate-100 px-3 py-2 text-xs" /></label>
+                      <label className="text-[10px] font-bold uppercase text-slate-500 sm:col-span-2">Dependencia<input disabled value={employee.dependency} className="mt-1 w-full rounded-xl border bg-slate-100 px-3 py-2 text-xs" /></label>
+                    </div>
+                    {profileEditing && <div className="flex gap-2"><button className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white">Guardar cambios</button><button type="button" onClick={() => setProfileEditing(false)} className="rounded-xl border px-4 py-2 text-xs font-bold">Cancelar</button></div>}
+                  </form>
 
                   <div className="space-y-4 pt-1">
                     <div>

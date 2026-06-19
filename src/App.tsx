@@ -116,7 +116,7 @@ export default function App() {
   };
 
   const handleUpdateEmployee = async (updatedEmp: Employee) => {
-    const saved = updatedEmp.id === currentUser?.employeeId && currentUser?.role !== 'ADMIN'
+    const saved = updatedEmp.id === currentUser?.employeeId
       ? await employeesApi.updateMe(updatedEmp)
       : await employeesApi.update(updatedEmp.id, updatedEmp);
     setEmployees((prev) => prev.map((emp) => (emp.id === saved.id ? saved : emp)));
@@ -126,6 +126,12 @@ export default function App() {
   const handleAddWorkLog = async (newLogData: Omit<WorkLog, 'id'>) => {
     const saved = await worklogsApi.create(newLogData);
     setWorkLogs((prev) => [saved, ...prev]);
+    return saved;
+  };
+
+  const handleUpdateWorkLog = async (id: string, payload: Partial<WorkLog>) => {
+    const saved = await worklogsApi.update(id, payload);
+    setWorkLogs((prev) => prev.map((log) => log.id === saved.id ? saved : log));
     return saved;
   };
 
@@ -171,6 +177,11 @@ export default function App() {
     });
     setProjects((prev) => prev.map((p) => (p.id === saved.id ? saved : p)));
     return saved;
+  };
+
+  const handleDeleteProject = async (id: string) => {
+    await projectsApi.remove(id);
+    setProjects((prev) => prev.filter((project) => project.id !== id));
   };
 
   const handleAddDeployment = async (projectId: string, payload: any) => {
@@ -394,6 +405,7 @@ export default function App() {
             onApproveRejectRequest={handleApproveRejectRequest}
             onAddProject={handleAddProject}
             onUpdateProject={handleUpdateProject}
+            onDeleteProject={handleDeleteProject}
             onAddProjectUpdate={handleAddProjectUpdate}
             onAddDeployment={handleAddDeployment}
             onAddManualLicense={handleAddManualLicense}
@@ -425,9 +437,11 @@ export default function App() {
             licenseRules={licenseRules}
             strikeConfig={strikeConfig}
             onAddWorkLog={handleAddWorkLog}
+            onUpdateWorkLog={handleUpdateWorkLog}
             onUpdateProject={handleUpdateProject}
             onAddProjectUpdate={handleAddProjectUpdate}
             onAddLicenseRequest={handleAddLicenseRequest}
+            onDeleteLicenseRequest={handleDeleteLicenseRequest}
             onUpdateAvatar={handleUpdateAvatar}
             onUpdateEmployee={handleUpdateEmployee}
             onChangePassword={handleChangePassword}

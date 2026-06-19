@@ -28,6 +28,7 @@ interface AdminDashboardProps {
   onApproveRejectRequest: (id: string, status: 'aprobado' | 'rechazado') => any;
   onAddProject: (proj: Omit<Project, 'id' | 'status'>) => any;
   onUpdateProject?: (proj: Project) => Promise<Project> | void;
+  onDeleteProject: (id: string) => Promise<void>;
   onAddProjectUpdate?: (projectId: string, update: string | (Partial<ProjectUpdate> & { content: string })) => Promise<Project> | void;
   onAddDeployment?: (projectId: string, payload: any) => Promise<any> | void;
   onAddManualLicense: (req: Omit<LicenseRequest, 'id' | 'status' | 'dateRequested'> & { status: 'pendiente' | 'aprobado' }) => any;
@@ -67,6 +68,7 @@ export default function AdminDashboard({
   onApproveRejectRequest,
   onAddProject,
   onUpdateProject,
+  onDeleteProject,
   onAddProjectUpdate,
   onAddDeployment,
   onAddManualLicense,
@@ -136,6 +138,8 @@ export default function AdminDashboard({
 
   // Selected project for detail view state
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [projectTimelinePage, setProjectTimelinePage] = useState(1);
+  useEffect(() => setProjectTimelinePage(1), [selectedProjectId]);
   const [isEditingProject, setIsEditingProject] = useState(false);
   const [newUpdateText, setNewUpdateText] = useState('');
   const [newUpdateTitle, setNewUpdateTitle] = useState('');
@@ -268,6 +272,8 @@ export default function AdminDashboard({
 
   // States for Admin's Self Profile
   const [adminProfileName, setAdminProfileName] = useState(currentAdmin.name);
+  const [adminProfileFirstName, setAdminProfileFirstName] = useState(currentAdmin.name.trim().split(/\s+/)[0] || '');
+  const [adminProfileLastName, setAdminProfileLastName] = useState(currentAdmin.name.trim().split(/\s+/).slice(1).join(' '));
   const [adminProfileEmail, setAdminProfileEmail] = useState(currentAdmin.email);
   const [adminProfilePassword, setAdminProfilePassword] = useState('');
   const [adminProfileAvatar, setAdminProfileAvatar] = useState(currentAdmin.avatar || '');
@@ -814,7 +820,8 @@ export default function AdminDashboard({
 
   const handleSaveAdminSelfProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!adminProfileName.trim() || !adminProfileEmail.trim()) {
+    const fullName = `${adminProfileFirstName} ${adminProfileLastName}`.trim();
+    if (!fullName || !adminProfileEmail.trim()) {
       triggerAlert('error', 'Por favor, completa los campos de Nombre y Correo.');
       return;
     }
@@ -822,7 +829,7 @@ export default function AdminDashboard({
     try {
       await Promise.resolve(onUpdateEmployee({
         ...currentAdmin,
-        name: adminProfileName,
+        name: fullName,
         email: adminProfileEmail,
         avatar: adminProfileAvatar,
         ...(adminProfilePassword.trim() ? { password: adminProfilePassword.trim() } : {}),
@@ -2277,6 +2284,7 @@ export default function AdminDashboard({
                   mode: undefined
                 }))
               ].sort((a, b) => b.date.localeCompare(a.date));
+              const timelinePages = Math.max(1, Math.ceil(combinedTimeline.length / 10));
 
               return (
                 <div className="space-y-6 animate-fade-in w-full">
@@ -2312,13 +2320,17 @@ export default function AdminDashboard({
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => setIsEditingProject((current) => !current)}
-                      className="self-start sm:self-auto bg-slate-900 hover:bg-indigo-700 text-white rounded-xl px-4 py-2 text-xs font-bold transition-all"
-                    >
-                      {isEditingProject ? 'Cancelar edición' : 'Editar proyecto'}
-                    </button>
+                    <div className="flex gap-2 self-start sm:self-auto">
+                      <button type="button" onClick={() => setIsEditingProject((current) => !current)} className="bg-slate-900 hover:bg-indigo-700 text-white rounded-xl px-4 py-2 text-xs font-bold transition-all">
+                        {isEditingProject ? 'Cancelar edición' : 'Editar proyecto'}
+                      </button>
+                      <button type="button" onClick={() => {
+                        if (!window.confirm('¿Seguro que querés eliminar este proyecto? Esta acción lo ocultará de los listados.')) return;
+                        Promise.resolve(onDeleteProject(selectedProj.id)).then(() => { setSelectedProjectId(null); triggerAlert('success', 'Proyecto eliminado correctamente'); }).catch(() => triggerAlert('error', 'No se pudo eliminar el proyecto'));
+                      }} className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-bold text-rose-700 hover:bg-rose-100">
+                        Eliminar proyecto
+                      </button>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-2 bg-white p-4 rounded-2xl border border-gray-150 text-xs">
@@ -2600,6 +2612,8 @@ export default function AdminDashboard({
                         </span>
                       </div>
 
+                      {combinedTimeline.length > 10 && <div className="mb-4 flex items-center justify-end gap-2 text-xs"><button type="button" disabled={projectTimelinePage === 1} onClick={() => setProjectTimelinePage((page) => page - 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Anterior</button><strong>Página {projectTimelinePage} de {timelinePages}</strong><button type="button" disabled={projectTimelinePage === timelinePages} onClick={() => setProjectTimelinePage((page) => page + 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Siguiente</button></div>}
+
                       {combinedTimeline.length === 0 ? (
                         <div className="py-12 text-center text-gray-405">
                           <p className="text-xs italic">Este proyecto aún no registra movimientos ni directivas oficiales.</p>
@@ -2607,7 +2621,7 @@ export default function AdminDashboard({
                         </div>
                       ) : (
                         <div className="relative border-l border-indigo-100 pl-4 ml-2 space-y-6">
-                          {combinedTimeline.map((item) => {
+                          {combinedTimeline.slice((projectTimelinePage - 1) * 10, projectTimelinePage * 10).map((item) => {
                             const isAdminType = item.type === 'admin';
                             return (
                               <div key={item.id} className="relative">
@@ -3768,14 +3782,18 @@ export default function AdminDashboard({
               <form onSubmit={handleSaveAdminSelfProfile} className="mt-6 space-y-5">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Nombre y apellido</label>
+                    <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Nombre</label>
                     <input
                       type="text"
-                      value={adminProfileName}
-                      onChange={(e) => setAdminProfileName(e.target.value)}
+                      value={adminProfileFirstName}
+                      onChange={(e) => { setAdminProfileFirstName(e.target.value); setAdminProfileName(`${e.target.value} ${adminProfileLastName}`.trim()); }}
                       className="w-full text-xs font-semibold border border-gray-300 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-slate-900"
                       required
                     />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Apellido</label>
+                    <input type="text" value={adminProfileLastName} onChange={(e) => { setAdminProfileLastName(e.target.value); setAdminProfileName(`${adminProfileFirstName} ${e.target.value}`.trim()); }} className="w-full text-xs font-semibold border border-gray-300 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-slate-900" />
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Email</label>

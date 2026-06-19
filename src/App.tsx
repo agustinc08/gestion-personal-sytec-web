@@ -10,6 +10,7 @@ import { authApi } from './api/auth.api';
 import AdminDashboard from './components/AdminDashboard';
 import EmployeeDashboard from './components/EmployeeDashboard';
 import LoginScreen from './components/LoginScreen';
+import NotificationBell from './components/NotificationBell';
 import { DEPENDENCIES, INITIAL_STRIKE_CONFIG, LAWS_ARTICLES_RULES } from './data/mockData';
 import { Employee, LicenseArticle, LicenseRequest, LicenseRule, Project, ProjectUpdate, StrikeConfig, WorkLog } from './types';
 
@@ -336,9 +337,12 @@ export default function App() {
               <p className="text-[10px] text-slate-400 mt-0.5 sm:mt-0">CUIL de Acceso: <span className="font-mono">{currentEmployee.cuil}</span> | Dependencia: {currentEmployee.dependency}</p>
             </div>
           </div>
-          <button onClick={handleLogout} className="px-4 py-2 bg-slate-800 hover:bg-rose-700 hover:text-white text-slate-100 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-sm border border-slate-700">
-            <LogOut className="w-4 h-4" /> Cerrar sesión
-          </button>
+          <div className="flex items-center gap-3">
+            <NotificationBell refreshKey={currentUser?.id} />
+            <button onClick={handleLogout} className="px-4 py-2 bg-slate-800 hover:bg-rose-700 hover:text-white text-slate-100 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-sm border border-slate-700">
+              <LogOut className="w-4 h-4" /> Cerrar sesión
+            </button>
+          </div>
         </div>
       </div>
 

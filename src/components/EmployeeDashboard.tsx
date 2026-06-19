@@ -2,11 +2,13 @@
 import { statisticsApi } from '../api/statistics.api';
 import { Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, ActivityType, StatisticsResponse } from '../types';
 import { activityTypeLabel, deploymentEnvironmentLabel, deploymentStatusLabel, difficultyLabel, licenseStatusLabel, projectStatusLabel } from '../utils/labels';
-import { 
+import {
   Calendar, CheckCircle, FileText, User, Briefcase, Plus, Clock, 
   MapPin, ShieldAlert, Upload, Download, CheckCircle2, ChevronRight, AlertCircle, FileSpreadsheet,
   ArrowLeft, History, MessageSquare, Send, BarChart3
 } from 'lucide-react';
+import ProjectComments from './ProjectComments';
+import { Pagination, usePagination } from './Pagination';
 
 interface EmployeeDashboardProps {
   employee: Employee;
@@ -165,6 +167,9 @@ export default function EmployeeDashboard({
     (dailyActivityFilter === 'todos' || log.activityType === dailyActivityFilter) &&
     (dailyProjectFilter === 'todos' || log.projectId === dailyProjectFilter)
   ));
+  const dailyPagination = usePagination(dailyFilteredLogs, [dailyYear, dailyMonth, dailyModeFilter, dailyActivityFilter, dailyProjectFilter]);
+  const projectPagination = usePagination(myAssignedProjects);
+  const licensePagination = usePagination(myLicenseRequests);
   const selectedDayLogs = dailyFilteredLogs.filter((log) => log.date === selectedCalendarDate);
   const calendarYear = Number(dailyYear) || new Date().getFullYear();
   const calendarMonthIndex = (Number(dailyMonth) || new Date().getMonth() + 1) - 1;
@@ -756,7 +761,7 @@ export default function EmployeeDashboard({
                 </div>
               ) : (
                 <div className="space-y-4 max-h-[550px] overflow-y-auto pr-2">
-                  {dailyFilteredLogs.map((log) => {
+                  {dailyPagination.rows.map((log) => {
                     const linkedProject = projects.find(p => p.id === log.projectId || (p.name || '').toLowerCase().trim() === (log.title || '').toLowerCase().trim());
                     const isSyncedProject = !!linkedProject;
                     return (
@@ -801,6 +806,7 @@ export default function EmployeeDashboard({
                       </div>
                     );
                   })}
+                  <Pagination {...dailyPagination} />
                 </div>
               ))}
 
@@ -1111,6 +1117,8 @@ export default function EmployeeDashboard({
 
                     </div>
 
+                    <div className="lg:col-span-12"><ProjectComments projectId={selectedProj.id} /></div>
+
                     {/* Right Timeline feed of integrated events */}
                     <div className="lg:col-span-7 bg-white p-6 rounded-2xl border border-gray-150 shadow-sm">
                       <div className="flex items-center justify-between border-b pb-3.5 mb-5">
@@ -1217,7 +1225,7 @@ export default function EmployeeDashboard({
                       <p className="text-gray-500">No hay proyectos activos registrados.</p>
                     </div>
                   ) : (
-                    myAssignedProjects.map((proj) => {
+                    projectPagination.rows.map((proj) => {
                       const isAssigned = proj.assignedEmployeeIds.includes(employee.id);
                       const matchedLogs = workLogs.filter(log => (log.title || '').toLowerCase().trim() === (proj.name || '').toLowerCase().trim());
                       const adminUpdatesCount = proj.updates?.length || 0;
@@ -1289,6 +1297,7 @@ export default function EmployeeDashboard({
                     })
                   )}
                 </div>
+                <Pagination {...projectPagination} />
               </>
             )}
           </div>
@@ -1527,7 +1536,7 @@ export default function EmployeeDashboard({
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {myLicenseRequests.map((req) => (
+                  {licensePagination.rows.map((req) => (
                     <div 
                       key={req.id} 
                       className="bg-white p-4 rounded-xl border border-gray-150 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4"
@@ -1563,6 +1572,7 @@ export default function EmployeeDashboard({
                       </div>
                     </div>
                   ))}
+                  <Pagination {...licensePagination} />
                 </div>
               )}
             </div>

@@ -1,4 +1,4 @@
-import { Deployment, Project, ProjectUpdate } from '../types';
+import { Deployment, Project, ProjectComment, ProjectUpdate } from '../types';
 import { api } from './client';
 
 export const projectsApi = {
@@ -12,4 +12,7 @@ export const projectsApi = {
   addDeployment: async (id: string, payload: Partial<Deployment>) => (await api.post<Deployment>(`/projects/${id}/deployments`, payload)).data,
   updateDeployment: async (id: string, payload: Partial<Deployment>) => (await api.patch<Deployment>(`/deployments/${id}`, payload)).data,
   removeDeployment: async (id: string) => (await api.delete(`/deployments/${id}`)).data,
+  comments: async (id: string) => (await api.get<ProjectComment[]>(`/projects/${id}/comments`)).data,
+  addComment: async (id: string, message: string) => (await api.post<ProjectComment[]>(`/projects/${id}/comments`, { message })).data,
+  removeComment: async (id: string, commentId: string) => (await api.delete(`/projects/${id}/comments/${commentId}`)).data,
 };

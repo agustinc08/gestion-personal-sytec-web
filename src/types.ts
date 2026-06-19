@@ -190,3 +190,24 @@ export interface StrikeConfig {
   lastCoverEmployeeId: string;
   notes?: string;
 }
+
+export interface Notification {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  link?: string;
+  readAt?: string;
+  createdAt: string;
+}
+
+export interface ProjectComment {
+  id: string;
+  projectId: string;
+  authorUserId: string;
+  authorName: string;
+  message: string;
+  createdAt: string;
+  updatedAt: string;
+  canDelete: boolean;
+}

@@ -7,6 +7,8 @@ import {
   User, ShieldAlert, Award, AlertCircle, FilePlus, ChevronRight, Settings, ArrowRight, Trash2, Key, ArrowUpDown,
   ArrowLeft, History, MessageSquare, Send, BarChart3, Upload
 } from 'lucide-react';
+import ProjectComments from './ProjectComments';
+import { Pagination, usePagination } from './Pagination';
 
 interface AdminDashboardProps {
   employees: Employee[];
@@ -467,6 +469,26 @@ export default function AdminDashboard({
     (adminWorkLogActivityType === 'todos' || log.activityType === adminWorkLogActivityType) &&
     (adminWorkLogProjectId === 'todos' || log.projectId === adminWorkLogProjectId)
   )).sort((a, b) => b.date.localeCompare(a.date));
+  const adminFilteredProjects = projects.filter((proj) => (
+    (projectYearFilter === 'todos' || String(proj.year) === projectYearFilter) &&
+    (projectDifficultyFilter === 'todos' || proj.difficulty === projectDifficultyFilter) &&
+    (projectStatusFilter === 'todos' || proj.status === projectStatusFilter) &&
+    (projectOwnerFilter === 'todos' || (projectOwnerFilter === 'sin_responsable' ? !proj.ownerId : proj.ownerId === projectOwnerFilter)) &&
+    (projectDeadlineFilter === 'todos' || proj.deadlineStatus === projectDeadlineFilter) &&
+    (projectRedesignFilter === 'todos' || String(!!proj.needsRedesign || proj.status === 'necesita_rediseno') === projectRedesignFilter) &&
+    (projectReworkFilter === 'todos' || String(!!proj.needsRework || proj.status === 'necesita_rehacer') === projectReworkFilter)
+  ));
+  const adminFilteredLicenses = licenseRequests.filter((req) => {
+    const sender = employees.find((employee) => employee.id === req.employeeId);
+    const query = licenseSearchQuery.toLowerCase();
+    const queryMatch = !!sender && (sender.name.toLowerCase().includes(query) || sender.dependency.toLowerCase().includes(query)) || req.article.toLowerCase().includes(query) || req.reason.toLowerCase().includes(query);
+    return queryMatch && (licenseStatusFilter === 'todos' || req.status === licenseStatusFilter);
+  }).sort((a, b) => b.startDate.localeCompare(a.startDate));
+  const employeePagination = usePagination(employees);
+  const userPagination = usePagination(employees);
+  const workLogPagination = usePagination(adminFilteredWorkLogs, [adminWorkLogYear, adminWorkLogMonth, adminWorkLogEmployeeId, adminWorkLogMode, adminWorkLogActivityType, adminWorkLogProjectId]);
+  const projectPagination = usePagination(adminFilteredProjects, [projectYearFilter, projectDifficultyFilter, projectStatusFilter, projectOwnerFilter, projectDeadlineFilter, projectRedesignFilter, projectReworkFilter]);
+  const licensePagination = usePagination(adminFilteredLicenses, [licenseSearchQuery, licenseStatusFilter]);
 
   const resetProjectForm = () => {
     setProjName('');
@@ -1058,7 +1080,7 @@ export default function AdminDashboard({
             <div className="lg:col-span-6 space-y-4">
               <h3 className="text-lg font-bold text-slate-900">Listado de Plantilla</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[600px] overflow-y-auto pr-1">
-                {employees.map((emp) => {
+                {employeePagination.rows.map((emp) => {
                   const isSelected = emp.id === selectedEmployeeId;
                   const remaining = getRemainingDays(emp);
                   return (
@@ -1105,6 +1127,7 @@ export default function AdminDashboard({
                   );
                 })}
               </div>
+              <Pagination {...employeePagination} />
             </div>
 
             {/* Right Col: Selected Employee detailed info, logs and licenses */}
@@ -1801,38 +1824,12 @@ export default function AdminDashboard({
 
                 {/* Listado de Solicitudes */}
                 <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
-                  {licenseRequests
-                    .filter((req) => {
-                      const sender = employees.find((e) => e.id === req.employeeId);
-                      const nameMatch = sender ? sender.name.toLowerCase().includes(licenseSearchQuery.toLowerCase()) : false;
-                      const dependencyMatch = sender ? sender.dependency.toLowerCase().includes(licenseSearchQuery.toLowerCase()) : false;
-                      const articleMatch = req.article.toLowerCase().includes(licenseSearchQuery.toLowerCase());
-                      const reasonMatch = req.reason.toLowerCase().includes(licenseSearchQuery.toLowerCase());
-                      const queryMatch = nameMatch || dependencyMatch || articleMatch || reasonMatch;
-
-                      const statusMatch = licenseStatusFilter === 'todos' || req.status === licenseStatusFilter;
-                      return queryMatch && statusMatch;
-                    })
-                    .sort((a, b) => b.startDate.localeCompare(a.startDate))
-                    .length === 0 ? (
+                  {licensePagination.total === 0 ? (
                       <div className="text-center py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-400 text-xs italic font-sans animate-fade-in">
                         No se encontraron registros de licencias que coincidan con los filtros aplicados.
                       </div>
                     ) : (
-                      licenseRequests
-                        .filter((req) => {
-                          const sender = employees.find((e) => e.id === req.employeeId);
-                          const nameMatch = sender ? sender.name.toLowerCase().includes(licenseSearchQuery.toLowerCase()) : false;
-                          const dependencyMatch = sender ? sender.dependency.toLowerCase().includes(licenseSearchQuery.toLowerCase()) : false;
-                          const articleMatch = req.article.toLowerCase().includes(licenseSearchQuery.toLowerCase());
-                          const reasonMatch = req.reason.toLowerCase().includes(licenseSearchQuery.toLowerCase());
-                          const queryMatch = nameMatch || dependencyMatch || articleMatch || reasonMatch;
-
-                          const statusMatch = licenseStatusFilter === 'todos' || req.status === licenseStatusFilter;
-                          return queryMatch && statusMatch;
-                        })
-                        .sort((a, b) => b.startDate.localeCompare(a.startDate))
-                        .map((req) => {
+                      licensePagination.rows.map((req) => {
                           const sender = employees.find((e) => e.id === req.employeeId);
                           const isEditingThisLic = editingLicenseId === req.id;
 
@@ -2016,6 +2013,7 @@ export default function AdminDashboard({
                         })
                     )}
                 </div>
+                <Pagination {...licensePagination} />
               </div>
 
               {/* Box 2: Chronological general logs list of attendance */}
@@ -2053,7 +2051,7 @@ export default function AdminDashboard({
                 <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
                   {adminFilteredWorkLogs.length === 0 ? (
                     <div className="border border-dashed border-slate-200 rounded-xl p-6 text-center text-sm text-slate-500">Sin registros para este mes.</div>
-                  ) : adminFilteredWorkLogs.map((log) => {
+                  ) : workLogPagination.rows.map((log) => {
                     const emp = employees.find(e => e.id === log.employeeId);
                     const linkedProject = projects.find((project) => project.id === log.projectId);
                     return (
@@ -2096,6 +2094,7 @@ export default function AdminDashboard({
                     );
                   })}
                 </div>
+                <Pagination {...workLogPagination} />
               </div>
             </div>
 
@@ -2565,6 +2564,8 @@ export default function AdminDashboard({
 
                     </div>
 
+                    <div className="lg:col-span-12"><ProjectComments projectId={selectedProj.id} /></div>
+
                     {/* Right side combined timeline feed */}
                     <div className="lg:col-span-7 bg-white p-6 rounded-2xl border border-gray-150 shadow-sm">
                       <div className="flex items-center justify-between border-b pb-3.5 mb-5">
@@ -2920,16 +2921,9 @@ export default function AdminDashboard({
                       <p className="text-sm">No has publicado ningún proyecto aún.</p>
                     </div>
                   ) : (
+                    <>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {projects.filter((proj) => (
-                        (projectYearFilter === 'todos' || String(proj.year) === projectYearFilter) &&
-                        (projectDifficultyFilter === 'todos' || proj.difficulty === projectDifficultyFilter) &&
-                        (projectStatusFilter === 'todos' || proj.status === projectStatusFilter) &&
-                        (projectOwnerFilter === 'todos' || (projectOwnerFilter === 'sin_responsable' ? !proj.ownerId : proj.ownerId === projectOwnerFilter)) &&
-                        (projectDeadlineFilter === 'todos' || proj.deadlineStatus === projectDeadlineFilter) &&
-                        (projectRedesignFilter === 'todos' || String(!!proj.needsRedesign || proj.status === 'necesita_rediseno') === projectRedesignFilter) &&
-                        (projectReworkFilter === 'todos' || String(!!proj.needsRework || proj.status === 'necesita_rehacer') === projectReworkFilter)
-                      )).map((proj) => {
+                      {projectPagination.rows.map((proj) => {
                         const associatedLogs = workLogs.filter(w => w.projectId === proj.id || (w?.title || '').toLowerCase().trim() === (proj?.name || '').toLowerCase().trim());
                         const adminUpdatesCount = proj.updates?.length || 0;
                         return (
@@ -3009,6 +3003,8 @@ export default function AdminDashboard({
                         );
                       })}
                     </div>
+                    <Pagination {...projectPagination} />
+                    </>
                   )}
                 </div>
               </div>
@@ -3440,7 +3436,7 @@ export default function AdminDashboard({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {employees.map((emp) => {
+                    {userPagination.rows.map((emp) => {
                       return (
                         <tr key={emp.id} className="hover:bg-slate-50/50 transition-colors">
                           {/* Profile with avatar */}
@@ -3558,6 +3554,7 @@ export default function AdminDashboard({
                     })}
                   </tbody>
                 </table>
+                <Pagination {...userPagination} />
               </div>
             </div>
 

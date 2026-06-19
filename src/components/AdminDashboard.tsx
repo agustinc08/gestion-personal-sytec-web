@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useState } from 'react';
 import { statisticsApi } from '../api/statistics.api';
-import { Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, LicenseArticle, ActivityType, StatisticsResponse } from '../types';
+import { Dependency, Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, LicenseArticle, ActivityType, StatisticsResponse } from '../types';
 import { activityTypeLabel, deploymentEnvironmentLabel, deploymentStatusLabel, difficultyLabel, licenseStatusLabel, projectStatusLabel, statColumnLabel } from '../utils/labels';
 import { 
   Users, Calendar, Briefcase, Plus, Check, X, FileText, 
@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import ProjectComments from './ProjectComments';
 import { Pagination, usePagination } from './Pagination';
+import DependencyAdmin from './DependencyAdmin';
 
 interface AdminDashboardProps {
   employees: Employee[];
@@ -17,7 +18,10 @@ interface AdminDashboardProps {
   licenseRequests: LicenseRequest[];
   licenseRules: LicenseRule[];
   licenseArticles: LicenseArticle[];
-  dependencies: string[];
+  dependencies: Dependency[];
+  onCreateDependency: (payload: Partial<Dependency> & { name: string }) => Promise<void>;
+  onUpdateDependency: (id: string, payload: Partial<Dependency>) => Promise<void>;
+  onRemoveDependency: (id: string) => Promise<void>;
   strikeConfig: StrikeConfig;
   currentAdmin: Employee;
   onUpdateStrikeConfig: (config: StrikeConfig) => void;
@@ -54,6 +58,9 @@ export default function AdminDashboard({
   licenseRules,
   licenseArticles,
   dependencies,
+  onCreateDependency,
+  onUpdateDependency,
+  onRemoveDependency,
   strikeConfig,
   currentAdmin,
   onUpdateStrikeConfig,
@@ -81,7 +88,7 @@ export default function AdminDashboard({
   remindedEmpIds,
   setRemindedEmpIds,
 }: AdminDashboardProps) {
-  const [adminTab, setAdminTab] = useState<'employees' | 'attendance' | 'projects' | 'statistics' | 'strikes' | 'settings' | 'profile'>('employees');
+  const [adminTab, setAdminTab] = useState<'employees' | 'attendance' | 'projects' | 'statistics' | 'strikes' | 'settings' | 'dependencies' | 'profile'>('employees');
 
   const todayStr = new Date().toISOString().split('T')[0];
   const nonAdminEmployees = employees.filter(e => !e.isAdmin);
@@ -125,6 +132,7 @@ export default function AdminDashboard({
 
   // Selected employee detail state
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(employees[0]?.id || null);
+  const [employeeDependencyFilter, setEmployeeDependencyFilter] = useState('todas');
 
   // Selected project for detail view state
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -140,7 +148,7 @@ export default function AdminDashboard({
   // New project state
   const [projName, setProjName] = useState('');
   const [projDesc, setProjDesc] = useState('');
-  const [projDependency, setProjDependency] = useState(dependencies[0] || '');
+  const [projDependency, setProjDependency] = useState(dependencies[0]?.name || '');
   const [projAssignedIds, setProjAssignedIds] = useState<string[]>([]);
   const [projYear, setProjYear] = useState(new Date().getFullYear());
   const [projDifficulty, setProjDifficulty] = useState<Project['difficulty']>('MEDIUM');
@@ -234,7 +242,7 @@ export default function AdminDashboard({
   const [newEmpPosition, setNewEmpPosition] = useState('');
   const [newEmpCuil, setNewEmpCuil] = useState('');
   const [newEmpPassword, setNewEmpPassword] = useState('');
-  const [newEmpDependency, setNewEmpDependency] = useState('Oficina de Sistemas y Tecnología (SyTec)');
+  const [newEmpDependency, setNewEmpDependency] = useState(dependencies[0]?.id || '');
   const [newEmpTotalDays, setNewEmpTotalDays] = useState(0);
   const [newEmpRemote, setNewEmpRemote] = useState<string[]>([]);
 
@@ -319,7 +327,7 @@ export default function AdminDashboard({
     setEditEmail(emp.email);
     setEditCuil(emp.cuil || '');
     setEditPassword(emp.password || '');
-    setEditDependency(emp.dependency);
+    setEditDependency(emp.dependencyId || '');
     setEditPosition(emp.position || '');
     setEditTotalLicenseDays(emp.totalLicenseDays);
     setEditRemoteDays(emp.remoteDaysAssigned || []);
@@ -341,7 +349,7 @@ export default function AdminDashboard({
       email: editEmail,
       cuil: editCuil,
       ...(editPassword.trim() ? { password: editPassword.trim() } : {}),
-      dependency: editDependency,
+      dependencyId: editDependency,
       position: editPosition,
       totalLicenseDays: editTotalLicenseDays,
       remoteDaysAssigned: editRemoteDays,
@@ -484,7 +492,8 @@ export default function AdminDashboard({
     const queryMatch = !!sender && (sender.name.toLowerCase().includes(query) || sender.dependency.toLowerCase().includes(query)) || req.article.toLowerCase().includes(query) || req.reason.toLowerCase().includes(query);
     return queryMatch && (licenseStatusFilter === 'todos' || req.status === licenseStatusFilter);
   }).sort((a, b) => b.startDate.localeCompare(a.startDate));
-  const employeePagination = usePagination(employees);
+  const filteredEmployees = employees.filter((employee) => employeeDependencyFilter === 'todas' || employee.dependencyId === employeeDependencyFilter);
+  const employeePagination = usePagination(filteredEmployees, [employeeDependencyFilter]);
   const userPagination = usePagination(employees);
   const workLogPagination = usePagination(adminFilteredWorkLogs, [adminWorkLogYear, adminWorkLogMonth, adminWorkLogEmployeeId, adminWorkLogMode, adminWorkLogActivityType, adminWorkLogProjectId]);
   const projectPagination = usePagination(adminFilteredProjects, [projectYearFilter, projectDifficultyFilter, projectStatusFilter, projectOwnerFilter, projectDeadlineFilter, projectRedesignFilter, projectReworkFilter]);
@@ -493,7 +502,7 @@ export default function AdminDashboard({
   const resetProjectForm = () => {
     setProjName('');
     setProjDesc('');
-    setProjDependency(dependencies[0] || '');
+    setProjDependency(dependencies[0]?.name || '');
     setProjAssignedIds([]);
     setProjYear(new Date().getFullYear());
     setProjDifficulty('MEDIUM');
@@ -781,7 +790,8 @@ export default function AdminDashboard({
     onAddEmployee({
       name: newEmpName,
       email: newEmpEmail,
-      dependency: newEmpDependency,
+      dependencyId: newEmpDependency,
+      dependency: dependencies.find((dependency) => dependency.id === newEmpDependency)?.name || 'Sin dependencia',
       position: newEmpPosition || 'Oficial',
       totalLicenseDays: newEmpTotalDays,
       licenseDaysTaken: 0,
@@ -1059,6 +1069,12 @@ export default function AdminDashboard({
           Administración de Usuarios
         </button>
         <button
+          onClick={() => setAdminTab('dependencies')}
+          className={`px-5 py-3 font-semibold text-sm border-b-2 flex items-center gap-2 whitespace-nowrap transition-all duration-200 ${adminTab === 'dependencies' ? 'border-red-600 text-red-600 font-bold' : 'border-transparent text-gray-500 hover:text-gray-900'}`}
+        >
+          <Users className="w-4 h-4 text-indigo-500" /> Dependencias
+        </button>
+        <button
           onClick={() => setAdminTab('profile')}
           className={`px-5 py-3 font-semibold text-sm border-b-2 flex items-center gap-2 whitespace-nowrap transition-all duration-200 ${
             adminTab === 'profile'
@@ -1078,7 +1094,13 @@ export default function AdminDashboard({
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             {/* Left Col: Employee cards list */}
             <div className="lg:col-span-6 space-y-4">
-              <h3 className="text-lg font-bold text-slate-900">Listado de Plantilla</h3>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-lg font-bold text-slate-900">Listado de Plantilla</h3>
+                <select value={employeeDependencyFilter} onChange={(event) => setEmployeeDependencyFilter(event.target.value)} className="rounded-xl border bg-white px-3 py-2 text-xs">
+                  <option value="todas">Todas las dependencias</option>
+                  {dependencies.map((dependency) => <option key={dependency.id} value={dependency.id}>{dependency.name}</option>)}
+                </select>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[600px] overflow-y-auto pr-1">
                 {employeePagination.rows.map((emp) => {
                   const isSelected = emp.id === selectedEmployeeId;
@@ -1191,9 +1213,9 @@ export default function AdminDashboard({
                             onChange={(e) => setEditDependency(e.target.value)}
                             className="w-full text-xs bg-white border border-slate-300 rounded-xl px-3 py-2.5"
                           >
-                            <option value="Oficina de Sistemas y Tecnología (SyTec)">Oficina de Sistemas y Tecnología (SyTec)</option>
-                            {dependencies.map((dep, idx) => (
-                              <option key={idx} value={dep}>{dep}</option>
+                            <option value="">Sin dependencia asignada</option>
+                            {dependencies.filter((dependency) => dependency.isActive).map((dependency) => (
+                              <option key={dependency.id} value={dependency.id}>{dependency.name}</option>
                             ))}
                           </select>
                         </div>
@@ -2748,8 +2770,8 @@ export default function AdminDashboard({
                         onChange={(e) => setProjDependency(e.target.value)}
                         className="w-full text-xs bg-white border border-gray-300 rounded-xl px-3 py-3"
                       >
-                        {dependencies.map((dep, idx) => (
-                          <option key={idx} value={dep}>{dep}</option>
+                        {dependencies.filter((dependency) => dependency.isActive).map((dependency) => (
+                          <option key={dependency.id} value={dependency.name}>{dependency.name}</option>
                         ))}
                       </select>
                     </div>
@@ -3406,6 +3428,10 @@ export default function AdminDashboard({
         )}
 
         {/* TAB 4: USER ADMINISTRATION (SPLIT VIEW WITH USER GRID AND NEW REGISTRATION) */}
+        {adminTab === 'dependencies' && (
+          <DependencyAdmin dependencies={dependencies} onCreate={onCreateDependency} onUpdate={onUpdateDependency} onRemove={onRemoveDependency} />
+        )}
+
         {adminTab === 'settings' && (
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
             
@@ -3641,9 +3667,9 @@ export default function AdminDashboard({
                       onChange={(e) => setNewEmpDependency(e.target.value)}
                       className="w-full text-xs bg-white border border-gray-355 rounded-xl px-3 py-2.5"
                     >
-                      <option value="Oficina de Sistemas y Tecnología (SyTec)">Oficina de Sistemas y Tecnología (SyTec)</option>
-                      {dependencies.map((dep, idx) => (
-                        <option key={idx} value={dep}>{dep}</option>
+                      <option value="">Sin dependencia asignada</option>
+                      {dependencies.filter((dependency) => dependency.isActive).map((dependency) => (
+                        <option key={dependency.id} value={dependency.id}>{dependency.name}</option>
                       ))}
                     </select>
                   </div>

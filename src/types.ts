@@ -4,6 +4,7 @@ export interface Employee {
   email?: string;
   avatar: string;
   dependency: string;
+  dependencyId?: string;
   position?: string; // Cargo dclaro por el usuario (e.g., "Oficial Interino")
   guardiasDone: number; // Días de guardia acumulados
   totalLicenseDays: number; // Días iniciales
@@ -189,6 +190,16 @@ export interface StrikeConfig {
   lastDate: string;
   lastCoverEmployeeId: string;
   notes?: string;
+}
+
+export interface Dependency {
+  id: string;
+  name: string;
+  description?: string;
+  isActive: boolean;
+  employeeCount: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Notification {

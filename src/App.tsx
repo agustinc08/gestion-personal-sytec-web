@@ -7,12 +7,13 @@ import { projectsApi } from './api/projects.api';
 import { strikeApi } from './api/strike.api';
 import { worklogsApi } from './api/worklogs.api';
 import { authApi } from './api/auth.api';
+import { dependenciesApi } from './api/dependencies.api';
 import AdminDashboard from './components/AdminDashboard';
 import EmployeeDashboard from './components/EmployeeDashboard';
 import LoginScreen from './components/LoginScreen';
 import NotificationBell from './components/NotificationBell';
 import { DEPENDENCIES, INITIAL_STRIKE_CONFIG, LAWS_ARTICLES_RULES } from './data/mockData';
-import { Employee, LicenseArticle, LicenseRequest, LicenseRule, Project, ProjectUpdate, StrikeConfig, WorkLog } from './types';
+import { Dependency, Employee, LicenseArticle, LicenseRequest, LicenseRule, Project, ProjectUpdate, StrikeConfig, WorkLog } from './types';
 
 function SessionAvatar({ src, name }: { src?: string; name: string }) {
   const [imageFailed, setImageFailed] = useState(false);
@@ -45,7 +46,7 @@ export default function App() {
   const [licenseRules, setLicenseRules] = useState<LicenseRule[]>(LAWS_ARTICLES_RULES);
   const [licenseArticles, setLicenseArticles] = useState<LicenseArticle[]>([]);
   const [strikeConfig, setStrikeConfig] = useState<StrikeConfig>(INITIAL_STRIKE_CONFIG);
-  const [dependencies] = useState<string[]>(DEPENDENCIES);
+  const [dependencies, setDependencies] = useState<Dependency[]>(DEPENDENCIES.map((name, index) => ({ id: `legacy-${index}`, name, isActive: true, employeeCount: 0, createdAt: '', updatedAt: '' })));
   const [remindedEmpIds, setRemindedEmpIds] = useState<string[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [initialFetchDone, setInitialFetchDone] = useState(false);
@@ -54,7 +55,7 @@ export default function App() {
   const refreshData = async (user = currentUser) => {
     if (!user) return;
     const isAdmin = user.role === 'ADMIN';
-    const [employeeRows, projectRows, licenseRows, workLogRows, rules, articleRows, strike] = await Promise.all([
+    const [employeeRows, projectRows, licenseRows, workLogRows, rules, articleRows, strike, dependencyRows] = await Promise.all([
       isAdmin ? employeesApi.all() : employeesApi.me().then((me) => [me]),
       isAdmin ? projectsApi.all() : projectsApi.my(),
       isAdmin ? licensesApi.all() : licensesApi.my(),
@@ -62,6 +63,7 @@ export default function App() {
       licensesApi.rules().catch(() => LAWS_ARTICLES_RULES),
       licensesApi.rules().then(() => licenseArticlesApi.all(isAdmin)).catch(() => []),
       strikeApi.config(),
+      isAdmin ? dependenciesApi.all() : Promise.resolve([]),
     ]);
     setEmployees(employeeRows);
     setProjects(projectRows);
@@ -70,6 +72,7 @@ export default function App() {
     setLicenseRules(rules);
     setLicenseArticles(articleRows);
     setStrikeConfig(strike);
+    if (isAdmin) setDependencies(dependencyRows);
   };
 
   useEffect(() => {
@@ -188,6 +191,16 @@ export default function App() {
   const handleAddEmployee = async (empData: any) => {
     const saved = await employeesApi.create(empData);
     setEmployees((prev) => [...prev, saved]);
+  };
+
+  const handleCreateDependency = async (payload: Partial<Dependency> & { name: string }) => {
+    await dependenciesApi.create(payload); setDependencies(await dependenciesApi.all());
+  };
+  const handleUpdateDependency = async (id: string, payload: Partial<Dependency>) => {
+    await dependenciesApi.update(id, payload); setDependencies(await dependenciesApi.all()); await refreshData();
+  };
+  const handleRemoveDependency = async (id: string) => {
+    await dependenciesApi.remove(id); setDependencies(await dependenciesApi.all());
   };
 
   const handleApproveRejectRequest = async (reqId: string, targetStatus: 'aprobado' | 'rechazado') => {
@@ -372,6 +385,9 @@ export default function App() {
             licenseRules={licenseRules}
             licenseArticles={licenseArticles}
             dependencies={dependencies}
+            onCreateDependency={handleCreateDependency}
+            onUpdateDependency={handleUpdateDependency}
+            onRemoveDependency={handleRemoveDependency}
             strikeConfig={strikeConfig}
             currentAdmin={currentEmployee}
             onUpdateStrikeConfig={handleUpdateStrikeConfig}

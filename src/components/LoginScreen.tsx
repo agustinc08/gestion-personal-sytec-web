@@ -37,7 +37,19 @@ export default function LoginScreen({ onLogin, loadError, setLoadError }: LoginS
       const user = await onLogin(cuil, password);
       setSuccessMsg(`Bienvenido/a, ${user.email || user.cuil || 'usuario'}`);
     } catch (error: any) {
-      setErrorMsg(error?.response?.data?.message || 'CUIL o contrasena incorrectos.');
+      const status = error?.response?.status;
+      const code = error?.code;
+      if (status === 401) {
+        setErrorMsg('CUIL o contraseña incorrectos.');
+      } else if (status === 403) {
+        setErrorMsg('No tenés permisos para ingresar.');
+      } else if (status >= 500) {
+        setErrorMsg('Error interno del servidor. Intentá nuevamente o avisá al administrador.');
+      } else if (code === 'ERR_NETWORK' || error?.message === 'Network Error') {
+        setErrorMsg('No se pudo conectar con el servidor. Verificá que la API esté levantada.');
+      } else {
+        setErrorMsg(error?.response?.data?.message || 'No se pudo iniciar sesión.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -88,7 +100,7 @@ export default function LoginScreen({ onLogin, loadError, setLoadError }: LoginS
             </div>
             <div>
               <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5 mb-2">
-                <KeyRound className="w-3.5 h-3.5 text-slate-400" /> Contrasena
+                <KeyRound className="w-3.5 h-3.5 text-slate-400" /> Contraseña
               </label>
               <input
                 type="password"

@@ -19,17 +19,88 @@ export interface Employee {
 export interface WorkLog {
   id: string;
   employeeId: string;
+  projectId?: string;
+  projectName?: string;
   title: string;
   description: string;
   date: string; // YYYY-MM-DD
-  mode: 'presencial' | 'remoto' | 'licencia';
+  mode: 'presencial' | 'remoto' | 'mixto' | 'licencia';
+  activityType?: ActivityType;
+  hours?: number;
 }
 
 export interface ProjectUpdate {
   id: string;
   authorName: string;
   date: string; // YYYY-MM-DD HH:mm
+  title?: string;
+  description?: string;
   content: string;
+  status?: string;
+  blockers?: string;
+  nextStep?: string;
+  hours?: number;
+  activityType?: ActivityType;
+}
+
+export type ActivityType = 'PROJECT' | 'SUPPORT' | 'MAINTENANCE' | 'DEPLOY' | 'MEETING' | 'DOCUMENTATION' | 'OTHER';
+
+export interface StatisticsResponse {
+  summary: {
+    totalProjects: number;
+    finishedProjects: number;
+    inProgressProjects: number;
+    deployedProjects: number;
+    overdueProjects: number;
+    totalUpdates: number;
+    supportUpdates: number;
+    deploys: number;
+    totalHours: number;
+  };
+  byEmployee: Array<{ employeeId: string; employeeName: string; assignedProjects: number; updates: number; supportUpdates: number; hours: number }>;
+  byProject: Array<{ projectId: string; projectName: string; status: string; difficulty: string; updates: number; supportUpdates: number; hours: number; lastProgressDate?: string }>;
+  byActivityType: Array<{ activityType: ActivityType; label: string; count: number; hours: number }>;
+  byWorkMode?: Array<{ mode: string; count: number; hours: number }>;
+  byMonth: Array<{ month: string; updates: number; supports: number; deploys: number; hours: number }>;
+  byStatus: Array<{ status: string; count: number }>;
+  byDifficulty: Array<{ difficulty: string; count: number }>;
+  myProjects?: number;
+  overdueProjects?: number;
+  upcomingProjects?: number;
+}
+
+export type ProjectStatus =
+  | 'vigente'
+  | 'pendiente'
+  | 'en_desarrollo'
+  | 'completado'
+  | 'terminado'
+  | 'pausado'
+  | 'en_revision'
+  | 'listo_git'
+  | 'rama_dev'
+  | 'listo_docker'
+  | 'dockerizado'
+  | 'deployado'
+  | 'necesita_rehacer'
+  | 'necesita_rediseno'
+  | 'archivado';
+
+export type ProjectDifficulty = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+
+export interface Deployment {
+  id: string;
+  projectId: string;
+  environment: 'LOCAL' | 'DEV' | 'TEST' | 'PROD';
+  status: 'PENDING' | 'SUCCESS' | 'FAILED' | 'ROLLED_BACK';
+  apiCommit?: string;
+  webCommit?: string;
+  apiRepoUrl?: string;
+  webRepoUrl?: string;
+  server?: string;
+  deployedByName?: string;
+  notes?: string;
+  deployedAt: string;
 }
 
 export interface Project {
@@ -38,20 +109,65 @@ export interface Project {
   description: string;
   requesterDependency: string; // Dependencia que lo solicita
   assignedEmployeeIds: string[]; // Empleados asignados
-  status: 'vigente' | 'completado' | 'pausado';
+  status: ProjectStatus;
+  ownerId?: string;
+  ownerName?: string;
+  year?: number;
+  difficulty?: ProjectDifficulty;
+  deadline?: string;
+  repositoryApiUrl?: string;
+  repositoryWebUrl?: string;
+  branch?: string;
+  techStack?: string;
+  notes?: string;
+  needsRedesign?: boolean;
+  needsRework?: boolean;
+  lastProgressDate?: string;
+  lastDeployDate?: string;
+  deadlineStatus?: 'en_termino' | 'proximo' | 'esta_semana' | 'vence_hoy' | 'vencido' | 'sin_fecha';
+  updatedAt?: string;
   updates?: ProjectUpdate[];
+  deployments?: Deployment[];
 }
 
 export interface LicenseRequest {
   id: string;
   employeeId: string;
+  articleId?: string;
   article: string;
   startDate: string;
   endDate: string;
   reason: string;
   certificateName?: string;
-  status: 'pendiente' | 'aprobado' | 'rechazado';
+  status: 'pendiente' | 'aprobado' | 'rechazado' | 'cancelado';
   dateRequested: string;
+}
+
+export interface LicenseArticleField {
+  id: string;
+  articleId: string;
+  key: string;
+  label: string;
+  type: 'TEXT' | 'DATE' | 'NUMBER' | 'MULTILINE';
+  page: number;
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+  fontSize: number;
+  defaultValue?: string;
+  required: boolean;
+}
+
+export interface LicenseArticle {
+  id: string;
+  code: string;
+  title: string;
+  description?: string;
+  isActive: boolean;
+  templatePdfPath?: string;
+  templatePdfName?: string;
+  fields?: LicenseArticleField[];
 }
 
 export interface LicenseRule {

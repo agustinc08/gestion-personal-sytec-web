@@ -1,9 +1,11 @@
-import React, { useState, useRef } from 'react';
-import { Employee, WorkLog, Project, LicenseRequest, LicenseRule, StrikeConfig } from '../types';
+﻿import React, { useEffect, useState, useRef } from 'react';
+import { statisticsApi } from '../api/statistics.api';
+import { Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, ActivityType, StatisticsResponse } from '../types';
+import { activityTypeLabel, deploymentEnvironmentLabel, deploymentStatusLabel, difficultyLabel, licenseStatusLabel, projectStatusLabel } from '../utils/labels';
 import { 
   Calendar, CheckCircle, FileText, User, Briefcase, Plus, Clock, 
   MapPin, ShieldAlert, Upload, Download, CheckCircle2, ChevronRight, AlertCircle, FileSpreadsheet,
-  ArrowLeft, History, MessageSquare, Send
+  ArrowLeft, History, MessageSquare, Send, BarChart3
 } from 'lucide-react';
 
 interface EmployeeDashboardProps {
@@ -14,10 +16,11 @@ interface EmployeeDashboardProps {
   licenseRequests: LicenseRequest[];
   licenseRules: LicenseRule[];
   strikeConfig: StrikeConfig;
-  onAddWorkLog: (log: Omit<WorkLog, 'id'>) => any;
+  onAddWorkLog: (log: Omit<WorkLog, 'id'>) => Promise<WorkLog> | WorkLog;
   onUpdateProject?: (proj: Project) => void;
+  onAddProjectUpdate?: (projectId: string, update: string | (Partial<ProjectUpdate> & { content: string })) => Promise<Project> | void;
   onAddLicenseRequest: (req: Omit<LicenseRequest, 'id' | 'status' | 'dateRequested'>) => any;
-  onUpdateAvatar: (employeeId: string, avatarUrl: string) => void;
+  onUpdateAvatar: (employeeId: string, avatarUrl: string | File) => Promise<Employee> | void;
   onUpdateEmployee: (emp: Employee) => void;
   onChangePassword?: (currentPassword: string, newPassword: string) => Promise<void>;
   remindedEmpIds?: string[];
@@ -33,24 +36,60 @@ export default function EmployeeDashboard({
   strikeConfig,
   onAddWorkLog,
   onUpdateProject,
+  onAddProjectUpdate,
   onAddLicenseRequest,
   onUpdateAvatar,
   onUpdateEmployee,
   onChangePassword,
   remindedEmpIds = [],
 }: EmployeeDashboardProps) {
-  const [activeTab, setActiveTab] = useState<'carga_diaria' | 'proyectos' | 'licencias' | 'perfil'>('carga_diaria');
+  const [activeTab, setActiveTab] = useState<'carga_diaria' | 'proyectos' | 'statistics' | 'licencias' | 'perfil'>('carga_diaria');
 
   // Selected project state
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [newUpdateText, setNewUpdateText] = useState('');
+  const [newUpdateTitle, setNewUpdateTitle] = useState('');
+  const [newUpdateStatus, setNewUpdateStatus] = useState('');
+  const [newUpdateBlockers, setNewUpdateBlockers] = useState('');
+  const [newUpdateNextStep, setNewUpdateNextStep] = useState('');
+  const [newUpdateHours, setNewUpdateHours] = useState('');
+  const [newUpdateActivityType, setNewUpdateActivityType] = useState<ActivityType>('PROJECT');
+  const [statsYear, setStatsYear] = useState(String(new Date().getFullYear()));
+  const [statsMonth, setStatsMonth] = useState('todos');
+  const [statsProjectId, setStatsProjectId] = useState('todos');
+  const [statsActivityType, setStatsActivityType] = useState('todos');
+  const [statistics, setStatistics] = useState<StatisticsResponse | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [statsError, setStatsError] = useState('');
+
+  const activityLabels: Record<ActivityType, string> = {
+    PROJECT: 'Proyecto',
+    SUPPORT: 'Soporte',
+    MAINTENANCE: 'Mantenimiento',
+    DEPLOY: 'Deploy',
+    MEETING: 'Reunión',
+    DOCUMENTATION: 'Documentación',
+    OTHER: 'Otro',
+  };
 
   // Daily log state
   const [logTitle, setLogTitle] = useState('');
   const [logDescription, setLogDescription] = useState('');
-  const [logMode, setLogMode] = useState<'presencial' | 'remoto' | 'licencia'>('presencial');
+  const [logMode, setLogMode] = useState<WorkLog['mode']>('presencial');
+  const [logProjectId, setLogProjectId] = useState('');
+  const [logActivityType, setLogActivityType] = useState<ActivityType>('PROJECT');
+  const [logHours, setLogHours] = useState('');
   const [overrideDate, setOverrideDate] = useState(false);
   const [logDate, setLogDate] = useState(new Date().toISOString().split('T')[0]);
+  const [dailyView, setDailyView] = useState<'list' | 'calendar'>('list');
+  const [dailyYear, setDailyYear] = useState(String(new Date().getFullYear()));
+  const [dailyMonth, setDailyMonth] = useState(String(new Date().getMonth() + 1));
+  const [dailyModeFilter, setDailyModeFilter] = useState('todos');
+  const [dailyActivityFilter, setDailyActivityFilter] = useState('todos');
+  const [dailyProjectFilter, setDailyProjectFilter] = useState('todos');
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState(new Date().toISOString().split('T')[0]);
+  const [isSavingWorkLog, setIsSavingWorkLog] = useState(false);
+  const workLogFormRef = useRef<HTMLDivElement>(null);
 
   // Password change states
   const [currentPasswordInput, setCurrentPasswordInput] = useState('');
@@ -101,6 +140,83 @@ export default function EmployeeDashboard({
 
   // Determine projects I'm assigned or those matched by titles
   const myAssignedProjects = projects.filter(p => p.assignedEmployeeIds.includes(employee.id));
+  const modeLabels: Record<string, string> = {
+    presencial: 'Presencial',
+    remoto: 'Remoto',
+    mixto: 'Mixto',
+    licencia: 'Licencia',
+  };
+  const modeBadgeClass = (mode?: string) => (
+    mode === 'presencial' ? 'bg-blue-50 text-blue-700 border-blue-100' :
+    mode === 'remoto' ? 'bg-amber-50 text-amber-700 border-amber-100' :
+    mode === 'mixto' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
+    'bg-purple-50 text-purple-700 border-purple-100'
+  );
+  const toLocalDateInput = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+  const dailyFilteredLogs = myWorkLogs.filter((log) => (
+    String(new Date(`${log.date}T00:00:00`).getFullYear()) === dailyYear &&
+    String(new Date(`${log.date}T00:00:00`).getMonth() + 1) === dailyMonth &&
+    (dailyModeFilter === 'todos' || log.mode === dailyModeFilter) &&
+    (dailyActivityFilter === 'todos' || log.activityType === dailyActivityFilter) &&
+    (dailyProjectFilter === 'todos' || log.projectId === dailyProjectFilter)
+  ));
+  const selectedDayLogs = dailyFilteredLogs.filter((log) => log.date === selectedCalendarDate);
+  const calendarYear = Number(dailyYear) || new Date().getFullYear();
+  const calendarMonthIndex = (Number(dailyMonth) || new Date().getMonth() + 1) - 1;
+  const monthStart = new Date(calendarYear, calendarMonthIndex, 1);
+  const monthDays = new Date(calendarYear, calendarMonthIndex + 1, 0).getDate();
+  const leadingEmptyDays = (monthStart.getDay() + 6) % 7;
+  const calendarCells = [
+    ...Array.from({ length: leadingEmptyDays }, () => null),
+    ...Array.from({ length: monthDays }, (_, idx) => new Date(calendarYear, calendarMonthIndex, idx + 1)),
+  ];
+  const todayIso = new Date().toISOString().split('T')[0];
+  const monthTitle = monthStart.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
+  const setCalendarMonth = (year: number, monthIndex: number) => {
+    const next = new Date(year, monthIndex, 1);
+    setDailyYear(String(next.getFullYear()));
+    setDailyMonth(String(next.getMonth() + 1));
+    setSelectedCalendarDate(toLocalDateInput(next));
+  };
+  const openFormForDate = (date: string) => {
+    setLogDate(date);
+    setOverrideDate(true);
+    workLogFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  const getDeadlineLabel = (project: Project) => {
+    if (!project.deadline) return 'Sin fecha límite';
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const deadline = new Date(`${project.deadline}T00:00:00`);
+    const diff = Math.ceil((deadline.getTime() - today.getTime()) / 86400000);
+    if (diff < 0) return `Vencido hace ${Math.abs(diff)} días`;
+    if (diff === 0) return 'Vence hoy';
+    if (diff === 1) return 'Falta 1 dia';
+    return `Faltan ${diff} días`;
+  };
+
+  useEffect(() => {
+    if (activeTab !== 'statistics') return;
+    setStatsLoading(true);
+    setStatsError('');
+    statisticsApi.me({
+      year: statsYear,
+      month: statsMonth,
+      projectId: statsProjectId,
+      activityType: statsActivityType,
+    })
+      .then(setStatistics)
+      .catch((error: any) => {
+        const status = error?.response?.status;
+        setStatsError(status === 403 ? 'No tenés permisos para ver estas estadísticas.' : 'No se pudieron cargar las estadísticas.');
+      })
+      .finally(() => setStatsLoading(false));
+  }, [activeTab, statsYear, statsMonth, statsProjectId, statsActivityType]);
 
   // Find next strike standby employee
   const sortedStrikeDutyList = employees.filter(e => e.strikeDutyOrder > 0).sort((a, b) => a.strikeDutyOrder - b.strikeDutyOrder);
@@ -140,34 +256,48 @@ export default function EmployeeDashboard({
     setTimeout(() => setAlertMsg(null), 4000);
   };
 
-  const handleLogSubmit = (e: React.FormEvent) => {
+  const handleLogSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!logTitle.trim() || !logDescription.trim()) {
       triggerAlert('error', 'Por favor, completa el título y la descripción del trabajo.');
       return;
     }
 
-    // Call callback to add worklog
-    const newLog = onAddWorkLog({
-      employeeId: employee.id,
-      title: logTitle,
-      description: logDescription,
-      date: overrideDate ? logDate : new Date().toISOString().split('T')[0],
-      mode: logMode,
-    });
+    const submittedTitle = logTitle;
+    const submittedProjectId = logProjectId;
+    const submittedDate = overrideDate ? logDate : new Date().toISOString().split('T')[0];
+    setIsSavingWorkLog(true);
+    try {
+      await Promise.resolve(onAddWorkLog({
+        employeeId: employee.id,
+        projectId: submittedProjectId || undefined,
+        title: submittedTitle,
+        description: logDescription,
+        date: submittedDate,
+        mode: logMode,
+        activityType: logActivityType,
+        hours: logHours ? Number(logHours) : undefined,
+      }));
 
-    // Reset fields
-    setLogTitle('');
-    setLogDescription('');
-    setLogMode('presencial');
-    setOverrideDate(false);
+      setLogTitle('');
+      setLogDescription('');
+      setLogMode('presencial');
+      setLogProjectId('');
+      setLogActivityType('PROJECT');
+      setLogHours('');
+      setOverrideDate(false);
+      setSelectedCalendarDate(submittedDate);
 
-    // Check if the title matches a current active project
-    const match = projects.find(p => (p.name || '').toLowerCase().trim() === (logTitle || '').toLowerCase().trim());
-    if (match) {
-      triggerAlert('success', `¡Trabajo diario guardado! Coincidió con el proyecto "${match.name}" y se vinculó automáticamente.`);
-    } else {
-      triggerAlert('success', '¡Trabajo diario registrado con éxito!');
+      const match = projects.find(p => p.id === submittedProjectId || (p.name || '').toLowerCase().trim() === (submittedTitle || '').toLowerCase().trim());
+      if (match) {
+        triggerAlert('success', `Trabajo diario guardado y vinculado al proyecto "${match.name}".`);
+      } else {
+        triggerAlert('success', 'Trabajo diario registrado con éxito.');
+      }
+    } catch {
+      triggerAlert('error', 'No se pudieron cargar los registros.');
+    } finally {
+      setIsSavingWorkLog(false);
     }
   };
 
@@ -244,7 +374,7 @@ export default function EmployeeDashboard({
         }`}>
           {alertMsg.type === 'success' ? <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" /> : <AlertCircle className="w-5 h-5 text-rose-600 flex-shrink-0" />}
           <div>
-            <p className="font-semibold text-sm">{alertMsg.type === 'success' ? 'Operación Exitosa' : 'Atención'}</p>
+            <p className="font-semibold text-sm">{alertMsg.type === 'success' ? 'Operación exitosa' : 'Atención'}</p>
             <p className="text-xs mt-0.5">{alertMsg.text}</p>
           </div>
         </div>
@@ -264,7 +394,7 @@ export default function EmployeeDashboard({
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h4 className="font-bold text-sm font-sans flex items-center gap-1.5">
-                  {wasReminded ? '⚠️ Recordatorio Oficial de Administración' : '⚠️ Registro Diario Pendiente'}
+                  {wasReminded ? 'Atención: Recordatorio Oficial de Administración' : 'Atención: Registro Diario Pendiente'}
                 </h4>
                 <span className={`text-[9.5px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
                   wasReminded ? 'bg-rose-150 text-rose-800 border border-rose-250' : 'bg-amber-150 text-amber-800 border border-amber-250'
@@ -339,7 +469,18 @@ export default function EmployeeDashboard({
           }`}
         >
           <Briefcase className="w-4 h-4" />
-          Proyectos Vigentes ({myAssignedProjects.length})
+          Mis proyectos ({myAssignedProjects.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('statistics')}
+          className={`px-5 py-3 font-semibold text-sm border-b-2 flex items-center gap-2 whitespace-nowrap transition-all duration-200 ${
+            activeTab === 'statistics'
+              ? 'border-indigo-600 text-indigo-600'
+              : 'border-transparent text-gray-500 hover:text-gray-900'
+          }`}
+        >
+          <BarChart3 className="w-4 h-4" />
+          Mis estadísticas
         </button>
         <button
           onClick={() => setActiveTab('licencias')}
@@ -371,7 +512,7 @@ export default function EmployeeDashboard({
         {activeTab === 'carga_diaria' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             {/* Form Input */}
-            <div className="lg:col-span-5 bg-white p-6 rounded-2xl border border-gray-150 shadow-sm self-start">
+            <div ref={workLogFormRef} className="lg:col-span-5 bg-white p-6 rounded-2xl border border-gray-150 shadow-sm self-start">
               <h3 className="text-lg font-bold text-gray-900 mb-5 flex items-center gap-2">
                 <Plus className="w-5 h-5 text-indigo-600" /> Cargar Trabajo Diario
               </h3>
@@ -404,7 +545,10 @@ export default function EmployeeDashboard({
                               <button
                                 key={idx}
                                 type="button"
-                                onClick={() => setLogTitle(p.name)}
+                                onClick={() => {
+                                  setLogTitle(p.name);
+                                  setLogProjectId(p.id);
+                                }}
                                 className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded text-[10px] font-semibold"
                               >
                                 {p.name}
@@ -419,10 +563,59 @@ export default function EmployeeDashboard({
 
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
+                    Proyecto asociado (opcional)
+                  </label>
+                  <select
+                    value={logProjectId}
+                    onChange={(e) => {
+                      setLogProjectId(e.target.value);
+                      const selected = projects.find((project) => project.id === e.target.value);
+                      if (selected && !logTitle.trim()) setLogTitle(selected.name);
+                    }}
+                    className="w-full text-sm bg-white border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-800 transition-all"
+                  >
+                    <option value="">Sin proyecto asociado</option>
+                    {myAssignedProjects.map((project) => (
+                      <option key={project.id} value={project.id}>{project.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
+                      Tipo de actividad
+                    </label>
+                    <select
+                      value={logActivityType}
+                      onChange={(e) => setLogActivityType(e.target.value as ActivityType)}
+                      className="w-full text-sm bg-white border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-800 transition-all"
+                    >
+                      {Object.entries(activityLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
+                      Horas (opcional)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.25"
+                      value={logHours}
+                      onChange={(e) => setLogHours(e.target.value)}
+                      placeholder="Ej. 3.5"
+                      className="w-full text-sm border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-800 transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
                     Modalidad del Día
                   </label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(['presencial', 'remoto', 'licencia'] as const).map((mode) => (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {(['presencial', 'remoto', 'mixto', 'licencia'] as const).map((mode) => (
                       <button
                         key={mode}
                         type="button"
@@ -435,7 +628,8 @@ export default function EmployeeDashboard({
                       >
                         <MapPin className={`w-4 h-4 ${
                           mode === 'presencial' ? 'text-blue-500' :
-                          mode === 'remoto' ? 'text-amber-500' : 'text-purple-500'
+                          mode === 'remoto' ? 'text-amber-500' :
+                          mode === 'mixto' ? 'text-emerald-500' : 'text-purple-500'
                         }`} />
                         <span className="capitalize">{mode}</span>
                       </button>
@@ -489,32 +683,82 @@ export default function EmployeeDashboard({
 
                 <button
                   type="submit"
-                  className="w-full cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm py-3.5 px-4 rounded-xl transition-all shadow-md hover:shadow-indigo-100 flex items-center justify-center gap-2"
+                  disabled={isSavingWorkLog}
+                  className="w-full cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm py-3.5 px-4 rounded-xl transition-all shadow-md hover:shadow-indigo-100 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  <CheckCircle className="w-4 h-4" /> Registrar Jornada Laboral
+                  <CheckCircle className="w-4 h-4" /> {isSavingWorkLog ? 'Guardando...' : 'Registrar Jornada Laboral'}
                 </button>
               </form>
             </div>
 
             {/* History of Worklogs */}
             <div className="lg:col-span-7 space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-bold text-gray-900">Historial de Registros</h3>
-                <span className="text-xs bg-slate-100 text-slate-600 font-semibold px-2 py-1 rounded">
-                  {myWorkLogs.length} Entradas
+              <div className="bg-white border border-gray-150 rounded-2xl p-4 shadow-sm space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900">Historial de Registros</h3>
+                    <p className="text-xs text-slate-500">Lista y calendario usan los mismos partes cargados.</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setDailyView('list')}
+                      className={`text-xs font-bold px-3 py-2 rounded-xl border transition-all ${dailyView === 'list' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                    >
+                      Ver lista
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDailyView('calendar')}
+                      className={`text-xs font-bold px-3 py-2 rounded-xl border transition-all ${dailyView === 'calendar' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                    >
+                      Ver calendario
+                    </button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                  <input
+                    type="number"
+                    value={dailyYear}
+                    onChange={(e) => setDailyYear(e.target.value)}
+                    className="text-xs border border-slate-200 rounded-xl px-3 py-2"
+                    placeholder="Año"
+                  />
+                  <select value={dailyMonth} onChange={(e) => setDailyMonth(e.target.value)} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
+                    {Array.from({ length: 12 }, (_, idx) => <option key={idx + 1} value={idx + 1}>{new Date(2026, idx, 1).toLocaleDateString('es-AR', { month: 'long' })}</option>)}
+                  </select>
+                  <select value={dailyModeFilter} onChange={(e) => setDailyModeFilter(e.target.value)} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
+                    <option value="todos">Modalidad</option>
+                    <option value="presencial">Presencial</option>
+                    <option value="remoto">Remoto</option>
+                    <option value="mixto">Mixto</option>
+                    <option value="licencia">Licencia</option>
+                  </select>
+                  <select value={dailyActivityFilter} onChange={(e) => setDailyActivityFilter(e.target.value)} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
+                    <option value="todos">Actividad</option>
+                    {Object.entries(activityLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                  </select>
+                  <select value={dailyProjectFilter} onChange={(e) => setDailyProjectFilter(e.target.value)} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
+                    <option value="todos">Proyecto</option>
+                    {myAssignedProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                  </select>
+                </div>
+                <span className="inline-flex text-xs bg-slate-100 text-slate-600 font-semibold px-2 py-1 rounded">
+                  {dailyFilteredLogs.length} Entradas filtradas
                 </span>
               </div>
 
-              {myWorkLogs.length === 0 ? (
+              {dailyView === 'list' && (dailyFilteredLogs.length === 0 ? (
                 <div className="bg-white p-12 text-center rounded-2xl border border-dashed border-gray-250">
                   <Clock className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                  <p className="text-gray-500 text-sm">No has registrado ningún parte de trabajo aún.</p>
-                  <p className="text-gray-400 text-xs mt-1">Usa el formulario de la izquierda para registrar tu día.</p>
+                  <p className="text-gray-500 text-sm">Sin registros para este mes.</p>
+                  <p className="text-gray-400 text-xs mt-1">Ajustá los filtros o cargá un parte desde el formulario.</p>
                 </div>
               ) : (
                 <div className="space-y-4 max-h-[550px] overflow-y-auto pr-2">
-                  {myWorkLogs.map((log) => {
-                    const isSyncedProject = projects.some(p => (p.name || '').toLowerCase().trim() === (log.title || '').toLowerCase().trim());
+                  {dailyFilteredLogs.map((log) => {
+                    const linkedProject = projects.find(p => p.id === log.projectId || (p.name || '').toLowerCase().trim() === (log.title || '').toLowerCase().trim());
+                    const isSyncedProject = !!linkedProject;
                     return (
                       <div 
                         key={log.id} 
@@ -529,9 +773,10 @@ export default function EmployeeDashboard({
                             <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
                               log.mode === 'presencial' ? 'bg-blue-50 text-blue-700 border border-blue-100' :
                               log.mode === 'remoto' ? 'bg-amber-50 text-amber-700 border border-amber-100' :
+                              log.mode === 'mixto' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
                               'bg-purple-50 text-purple-700 border border-purple-100'
                             }`}>
-                              {log.mode}
+                              {modeLabels[log.mode] || log.mode}
                             </span>
                           </div>
                           
@@ -548,9 +793,105 @@ export default function EmployeeDashboard({
                         <p className="text-sm text-gray-600 mt-2 whitespace-pre-line leading-relaxed">
                           {log.description}
                         </p>
+                        <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-bold">
+                          {linkedProject && <span className="bg-emerald-50 border border-emerald-100 text-emerald-700 rounded px-2 py-1">{linkedProject.name}</span>}
+                          {log.activityType && <span className="bg-indigo-50 border border-indigo-100 text-indigo-700 rounded px-2 py-1">{activityTypeLabel(log.activityType)}</span>}
+                          {log.hours !== undefined && <span className="bg-slate-50 border border-slate-200 text-slate-700 rounded px-2 py-1">{log.hours} h</span>}
+                        </div>
                       </div>
                     );
                   })}
+                </div>
+              ))}
+
+              {dailyView === 'calendar' && (
+                <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+                  <div className="xl:col-span-8 bg-white border border-gray-150 rounded-2xl p-4 shadow-sm">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                      <h4 className="text-sm font-black text-slate-900 capitalize">{monthTitle}</h4>
+                      <div className="flex items-center gap-2">
+                        <button type="button" onClick={() => setCalendarMonth(calendarYear, calendarMonthIndex - 1)} className="text-xs font-bold border rounded-xl px-3 py-2 hover:bg-slate-50">Anterior</button>
+                        <button type="button" onClick={() => {
+                          const today = new Date();
+                          setCalendarMonth(today.getFullYear(), today.getMonth());
+                          setSelectedCalendarDate(todayIso);
+                        }} className="text-xs font-bold border rounded-xl px-3 py-2 hover:bg-slate-50">Hoy</button>
+                        <button type="button" onClick={() => setCalendarMonth(calendarYear, calendarMonthIndex + 1)} className="text-xs font-bold border rounded-xl px-3 py-2 hover:bg-slate-50">Siguiente</button>
+                      </div>
+                    </div>
+                    {dailyFilteredLogs.length === 0 && (
+                      <div className="mb-3 bg-slate-50 border border-dashed border-slate-200 rounded-xl p-3 text-xs text-slate-500">Sin registros para este mes.</div>
+                    )}
+                    <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-black uppercase text-slate-400 mb-2">
+                      {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map((day) => <span key={day}>{day}</span>)}
+                    </div>
+                    <div className="grid grid-cols-7 gap-1">
+                      {calendarCells.map((date, idx) => {
+                        if (!date) return <div key={`empty-${idx}`} className="min-h-[76px] rounded-xl bg-slate-50/50" />;
+                        const iso = toLocalDateInput(date);
+                        const dayLogs = dailyFilteredLogs.filter((log) => log.date === iso);
+                        const isSelected = selectedCalendarDate === iso;
+                        const isToday = todayIso === iso;
+                        return (
+                          <button
+                            key={iso}
+                            type="button"
+                            onClick={() => setSelectedCalendarDate(iso)}
+                            className={`min-h-[76px] rounded-xl border p-2 text-left transition-all hover:border-indigo-200 ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-100 bg-indigo-50' : isToday ? 'border-emerald-300 bg-emerald-50' : 'border-slate-150 bg-white'}`}
+                          >
+                            <span className={`block text-xs font-black ${isToday ? 'text-emerald-700' : 'text-slate-800'}`}>{date.getDate()}</span>
+                            <div className="mt-1 space-y-1">
+                              {dayLogs.slice(0, 2).map((log) => (
+                                <span key={log.id} className={`block truncate text-[9px] font-bold border rounded px-1 py-0.5 ${modeBadgeClass(log.mode)}`}>
+                                  {modeLabels[log.mode] || log.mode}{log.activityType ? ` · ${activityTypeLabel(log.activityType)}` : ''}
+                                </span>
+                              ))}
+                              {dayLogs.length > 2 && <span className="block text-[9px] font-bold text-slate-500">+{dayLogs.length - 2}</span>}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="xl:col-span-4 bg-white border border-gray-150 rounded-2xl p-4 shadow-sm">
+                    <div className="flex items-start justify-between gap-2 mb-3">
+                      <div>
+                        <h4 className="text-sm font-black text-slate-900">Día seleccionado</h4>
+                        <p className="text-xs text-slate-500 font-mono">{selectedCalendarDate}</p>
+                      </div>
+                      <button type="button" onClick={() => openFormForDate(selectedCalendarDate)} className="text-[10px] font-black bg-indigo-600 text-white rounded-xl px-3 py-2 hover:bg-indigo-700">
+                        Cargar parte
+                      </button>
+                    </div>
+                    {selectedDayLogs.length === 0 ? (
+                      <div className="border border-dashed border-slate-200 rounded-xl p-5 text-center">
+                        <Clock className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                        <p className="text-sm text-slate-500">Sin registros para este día.</p>
+                        <button type="button" onClick={() => openFormForDate(selectedCalendarDate)} className="mt-3 text-xs font-bold text-indigo-600 hover:underline">
+                          Cargar parte para este día
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-3 max-h-[480px] overflow-y-auto pr-1">
+                        {selectedDayLogs.map((log) => {
+                          const linkedProject = projects.find(p => p.id === log.projectId || (p.name || '').toLowerCase().trim() === (log.title || '').toLowerCase().trim());
+                          return (
+                            <div key={log.id} className="border border-slate-150 rounded-xl p-3 text-xs">
+                              <div className="flex flex-wrap gap-1 mb-2">
+                                <span className={`font-bold border rounded px-2 py-1 ${modeBadgeClass(log.mode)}`}>{modeLabels[log.mode] || log.mode}</span>
+                                {log.activityType && <span className="font-bold border border-indigo-100 bg-indigo-50 text-indigo-700 rounded px-2 py-1">{activityTypeLabel(log.activityType)}</span>}
+                                {log.hours !== undefined && <span className="font-bold border border-slate-200 bg-slate-50 text-slate-700 rounded px-2 py-1">{log.hours} h</span>}
+                              </div>
+                              <h5 className="font-black text-slate-900">{log.title}</h5>
+                              {linkedProject && <p className="mt-1 font-bold text-emerald-700">{linkedProject.name}</p>}
+                              <p className="mt-2 text-slate-600 whitespace-pre-line leading-relaxed">{log.description}</p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -567,7 +908,7 @@ export default function EmployeeDashboard({
               }
 
               const isAssigned = selectedProj.assignedEmployeeIds.includes(employee.id);
-              const associatedLogs = workLogs.filter(w => (w?.title || '').toLowerCase().trim() === (selectedProj?.name || '').toLowerCase().trim());
+              const associatedLogs = workLogs.filter(w => w.projectId === selectedProj?.id || (w?.title || '').toLowerCase().trim() === (selectedProj?.name || '').toLowerCase().trim());
               const adminUpdates = selectedProj.updates || [];
 
               // Sort combined timeline descending
@@ -580,7 +921,13 @@ export default function EmployeeDashboard({
                     date: log.date,
                     authorName: emp ? emp.name : 'Agente',
                     avatar: emp?.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=Ag&backgroundColor=cbd5e1`,
+                    title: log.title,
                     content: log.description,
+                    activityType: undefined,
+                    blockers: undefined,
+                    nextStep: undefined,
+                    hours: undefined,
+                    progressStatus: undefined,
                     mode: log.mode
                   };
                 }),
@@ -590,7 +937,13 @@ export default function EmployeeDashboard({
                   date: upd.date,
                   authorName: upd.authorName,
                   avatar: `https://api.dicebear.com/7.x/initials/svg?seed=Ad&backgroundColor=6366f1`,
+                  title: upd.title,
                   content: upd.content,
+                  activityType: upd.activityType,
+                  blockers: upd.blockers,
+                  nextStep: upd.nextStep,
+                  hours: upd.hours,
+                  progressStatus: upd.status,
                   mode: undefined
                 }))
               ].sort((a, b) => b.date.localeCompare(a.date));
@@ -619,7 +972,7 @@ export default function EmployeeDashboard({
                               ? 'bg-amber-50 text-amber-800 border border-amber-100'
                               : 'bg-slate-100 text-slate-755'
                           }`}>
-                            {selectedProj.status === 'vigente' ? 'Vigente' : selectedProj.status === 'pausado' ? 'Pausado' : 'Completado'}
+                            {projectStatusLabel(selectedProj.status)}
                           </span>
                         </div>
                         <h4 className="text-lg font-black text-slate-900 mt-1">{selectedProj.name}</h4>
@@ -664,6 +1017,69 @@ export default function EmployeeDashboard({
                             </p>
                           </div>
                         )}
+
+                        {isAssigned && (
+                          <div className="pt-3 border-t border-gray-100 space-y-2">
+                            <input
+                              value={newUpdateTitle}
+                              onChange={(e) => setNewUpdateTitle(e.target.value)}
+                              placeholder="Titulo del avance"
+                              className="w-full text-xs border border-gray-200 rounded-xl p-3 text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            />
+                            <textarea
+                              rows={3}
+                              value={newUpdateText}
+                              onChange={(e) => setNewUpdateText(e.target.value)}
+                              placeholder="Cargar avance breve para este proyecto..."
+                              className="w-full text-xs border border-gray-200 rounded-xl p-3 text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            />
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <select value={newUpdateActivityType} onChange={(e) => setNewUpdateActivityType(e.target.value as ActivityType)} className="text-xs border border-gray-200 rounded-xl p-3">
+                                <option value="PROJECT">Proyecto</option>
+                                <option value="SUPPORT">Soporte</option>
+                                <option value="MAINTENANCE">Mantenimiento</option>
+                                <option value="DEPLOY">Deploy</option>
+                                <option value="MEETING">Reunión</option>
+                                <option value="DOCUMENTATION">Documentación</option>
+                                <option value="OTHER">Otro</option>
+                              </select>
+                              <input value={newUpdateStatus} onChange={(e) => setNewUpdateStatus(e.target.value)} placeholder="Estado del avance" className="text-xs border border-gray-200 rounded-xl p-3" />
+                              <input value={newUpdateHours} onChange={(e) => setNewUpdateHours(e.target.value)} type="number" min="0" step="0.25" placeholder="Horas dedicadas" className="text-xs border border-gray-200 rounded-xl p-3" />
+                              <input value={newUpdateBlockers} onChange={(e) => setNewUpdateBlockers(e.target.value)} placeholder="Bloqueos / problemas" className="text-xs border border-gray-200 rounded-xl p-3" />
+                              <input value={newUpdateNextStep} onChange={(e) => setNewUpdateNextStep(e.target.value)} placeholder="Próximo paso" className="text-xs border border-gray-200 rounded-xl p-3" />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!newUpdateText.trim() || !onAddProjectUpdate) return;
+                                Promise.resolve(onAddProjectUpdate(selectedProj.id, {
+                                  title: newUpdateTitle.trim(),
+                                  description: newUpdateText.trim(),
+                                  content: newUpdateText.trim(),
+                                  status: newUpdateStatus.trim(),
+                                  blockers: newUpdateBlockers.trim(),
+                                  nextStep: newUpdateNextStep.trim(),
+                                  hours: newUpdateHours ? Number(newUpdateHours) : undefined,
+                                  activityType: newUpdateActivityType,
+                                }))
+                                  .then(() => {
+                                    setNewUpdateText('');
+                                    setNewUpdateTitle('');
+                                    setNewUpdateStatus('');
+                                    setNewUpdateBlockers('');
+                                    setNewUpdateNextStep('');
+                                    setNewUpdateHours('');
+                                    setNewUpdateActivityType('PROJECT');
+                                    triggerAlert('success', 'Avance registrado en el proyecto.');
+                                  })
+                                  .catch(() => triggerAlert('error', 'No se pudo registrar el avance.'));
+                              }}
+                              className="w-full flex items-center justify-center gap-1.5 py-2 px-4 bg-slate-900 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+                            >
+                              <Send className="w-3.5 h-3.5" /> Publicar avance
+                            </button>
+                          </div>
+                        )}
                       </div>
 
                       {/* Team involved */}
@@ -703,7 +1119,7 @@ export default function EmployeeDashboard({
                           <h5 className="text-xs font-black text-slate-900 uppercase tracking-wider">Historial Integrado de Avances</h5>
                         </div>
                         <span className="text-[10px] bg-indigo-50 text-indigo-700 font-bold font-mono px-2 py-0.5 rounded">
-                          {combinedTimeline.length} actualizaciones
+                          {combinedTimeline.length} actualizaciónes
                         </span>
                       </div>
 
@@ -753,9 +1169,20 @@ export default function EmployeeDashboard({
                                     </span>
                                   </div>
 
+                                  {item.title && <p className="text-xs font-black text-slate-900 mb-1">{item.title}</p>}
                                   <p className="text-xs text-slate-750 leading-relaxed font-sans">
                                     {item.content}
                                   </p>
+
+                                  {(item.activityType || item.progressStatus || item.blockers || item.nextStep || item.hours !== undefined) && (
+                                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px]">
+                                      {item.activityType && <span className="bg-indigo-50 border border-indigo-100 rounded px-2 py-1"><b>Tipo:</b> {activityTypeLabel(item.activityType)}</span>}
+                                      {item.progressStatus && <span className="bg-slate-50 border rounded px-2 py-1"><b>Estado:</b> {item.progressStatus}</span>}
+                                      {item.hours !== undefined && <span className="bg-slate-50 border rounded px-2 py-1"><b>Horas:</b> {item.hours}</span>}
+                                      {item.blockers && <span className="bg-rose-50 border border-rose-100 rounded px-2 py-1"><b>Bloqueos:</b> {item.blockers}</span>}
+                                      {item.nextStep && <span className="bg-indigo-50 border border-indigo-100 rounded px-2 py-1"><b>Próximo:</b> {item.nextStep}</span>}
+                                    </div>
+                                  )}
 
                                   {item.mode && (
                                     <div className="mt-2 text-[9px] text-gray-400 font-mono flex items-center gap-1 bg-slate-50 w-max px-1.5 py-0.5 rounded border border-slate-100">
@@ -784,13 +1211,13 @@ export default function EmployeeDashboard({
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {projects.length === 0 ? (
+                  {myAssignedProjects.length === 0 ? (
                     <div className="col-span-2 text-center py-12 bg-white rounded-2xl border">
                       <Briefcase className="w-12 h-12 text-gray-300 mx-auto mb-2" />
                       <p className="text-gray-500">No hay proyectos activos registrados.</p>
                     </div>
                   ) : (
-                    projects.map((proj) => {
+                    myAssignedProjects.map((proj) => {
                       const isAssigned = proj.assignedEmployeeIds.includes(employee.id);
                       const matchedLogs = workLogs.filter(log => (log.title || '').toLowerCase().trim() === (proj.name || '').toLowerCase().trim());
                       const adminUpdatesCount = proj.updates?.length || 0;
@@ -817,12 +1244,25 @@ export default function EmployeeDashboard({
                                 <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full ${
                                   proj.status === 'vigente' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-gray-50 text-gray-700'
                                 }`}>
-                                  {proj.status === 'vigente' ? 'Vigente' : proj.status}
+                                  {projectStatusLabel(proj.status)}
                                 </span>
                               </div>
                             </div>
 
                             <h4 className="text-md font-extrabold text-slate-900">{proj.name}</h4>
+                            <div className="mt-2 flex flex-wrap gap-1.5 text-[9px] uppercase font-bold">
+                              <span className="bg-slate-50 border border-slate-200 text-slate-600 px-1.5 py-0.5 rounded">{proj.year || '-'}</span>
+                              <span className="bg-indigo-50 border border-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">{difficultyLabel(proj.difficulty)}</span>
+                              <span className={`border px-1.5 py-0.5 rounded ${
+                                proj.deadlineStatus === 'vencido' ? 'bg-red-50 border-red-100 text-red-700' :
+                                proj.deadlineStatus === 'vence_hoy' ? 'bg-orange-50 border-orange-100 text-orange-700' :
+                                proj.deadlineStatus === 'sin_fecha' ? 'bg-gray-50 border-gray-100 text-gray-600' :
+                                'bg-emerald-50 border-emerald-100 text-emerald-700'
+                              }`}>
+                                {getDeadlineLabel(proj)}
+                              </span>
+                              {proj.deployments?.[0] && <span className="bg-violet-50 border border-violet-100 text-violet-700 px-1.5 py-0.5 rounded">{deploymentEnvironmentLabel(proj.deployments[0].environment)} {deploymentStatusLabel(proj.deployments[0].status)}</span>}
+                            </div>
                             <p className="text-xs text-slate-500 mt-1 lines-2 leading-relaxed h-11 overflow-hidden">{proj.description}</p>
                           </div>
 
@@ -855,6 +1295,110 @@ export default function EmployeeDashboard({
         )}
 
         {/* TAB 3: SOLICITAR LICENCIA */}
+        {activeTab === 'statistics' && (
+          <div className="space-y-6 animate-fade-in">
+            <div className="bg-white border border-gray-150 rounded-2xl p-5 shadow-sm">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                    <BarChart3 className="w-5 h-5 text-indigo-600" /> Mis estadísticas
+                  </h3>
+                  <p className="text-xs text-slate-500">Tus proyectos asignados, avances, soporte y horas cargadas.</p>
+                </div>
+                {statsLoading && <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg">Cargando...</span>}
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                <input value={statsYear} onChange={(e) => setStatsYear(e.target.value)} placeholder="Año" className="text-xs border rounded-xl px-3 py-2" />
+                <select value={statsMonth} onChange={(e) => setStatsMonth(e.target.value)} className="text-xs border rounded-xl px-3 py-2">
+                  <option value="todos">Mes</option>
+                  {Array.from({ length: 12 }, (_, idx) => <option key={idx + 1} value={idx + 1}>{idx + 1}</option>)}
+                </select>
+                <select value={statsProjectId} onChange={(e) => setStatsProjectId(e.target.value)} className="text-xs border rounded-xl px-3 py-2">
+                  <option value="todos">Proyecto</option>
+                  {myAssignedProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                </select>
+                <select value={statsActivityType} onChange={(e) => setStatsActivityType(e.target.value)} className="text-xs border rounded-xl px-3 py-2">
+                  <option value="todos">Actividad</option>
+                  {Object.entries(activityLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {statsError && <div className="bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl p-4 text-sm font-bold">{statsError}</div>}
+            {!statsError && statistics && (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
+                  {[
+                    ['Mis proyectos', statistics.myProjects ?? statistics.summary.totalProjects],
+                    ['Avances', statistics.summary.totalUpdates],
+                    ['Soportes', statistics.summary.supportUpdates],
+                    ['Deploys', statistics.summary.deploys],
+                    ['Horas', statistics.summary.totalHours],
+                    ['Vencidos', statistics.overdueProjects ?? statistics.summary.overdueProjects],
+                    ['Prox. vencer', statistics.upcomingProjects ?? 0],
+                  ].map(([label, value]) => (
+                    <div key={String(label)} className="bg-white border border-gray-150 rounded-2xl p-4 shadow-sm">
+                      <span className="block text-[9px] uppercase font-black text-slate-400">{label}</span>
+                      <strong className="text-xl font-black font-mono text-slate-900">{value}</strong>
+                    </div>
+                  ))}
+                </div>
+
+                {statistics.summary.totalProjects === 0 && statistics.summary.totalUpdates === 0 ? (
+                  <div className="bg-white border border-dashed border-slate-300 rounded-2xl p-10 text-center text-sm text-slate-500">No hay datos para los filtros seleccionados.</div>
+                ) : (
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                    <div className="bg-white border border-gray-150 rounded-2xl p-5 shadow-sm">
+                      <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 mb-3">Mis proyectos</h4>
+                      <div className="space-y-2">
+                        {statistics.byProject.slice(0, 10).map((row) => (
+                          <div key={row.projectId} className="flex items-center justify-between gap-2 border-b border-slate-50 pb-2 text-xs">
+                            <span className="font-bold text-slate-800">{row.projectName}</span>
+                            <span className="font-mono text-slate-500">{row.updates} avances / {row.hours || 0}h</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="bg-white border border-gray-150 rounded-2xl p-5 shadow-sm">
+                      <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 mb-3">Por tipo de actividad</h4>
+                      <div className="space-y-2">
+                        {statistics.byActivityType.filter((row) => row.count || row.hours).map((row) => (
+                          <div key={row.activityType} className="flex items-center justify-between gap-2 border-b border-slate-50 pb-2 text-xs">
+                            <span className="font-bold text-slate-800">{activityLabels[row.activityType] || row.label}</span>
+                            <span className="font-mono text-slate-500">{row.count} / {row.hours || 0}h</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="bg-white border border-gray-150 rounded-2xl p-5 shadow-sm xl:col-span-2">
+                      <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 mb-3">Por modalidad</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                        {(statistics.byWorkMode || []).map((row) => (
+                          <div key={row.mode} className="bg-slate-50 border rounded-xl p-3 text-xs">
+                            <strong className="block text-slate-900">{{ ONSITE: 'Presencial', REMOTE: 'Remoto', MIXED: 'Mixto', LICENSE: 'Licencia' }[row.mode] || row.mode}</strong>
+                            <span className="text-slate-500">{row.count} partes / {row.hours || 0}h</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="bg-white border border-gray-150 rounded-2xl p-5 shadow-sm xl:col-span-2">
+                      <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 mb-3">Por mes</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                        {statistics.byMonth.map((row) => (
+                          <div key={row.month} className="bg-slate-50 border rounded-xl p-3 text-xs">
+                            <strong className="block text-slate-900">{row.month}</strong>
+                            <span className="text-slate-500">Avances {row.updates} - Soportes {row.supports} - Deploys {row.deploys}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
         {activeTab === 'licencias' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             {/* Form to submit license */}
@@ -1014,7 +1558,7 @@ export default function EmployeeDashboard({
                           req.status === 'aprobado' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
                           'bg-rose-100 text-rose-800 border border-rose-200'
                         }`}>
-                          {req.status}
+                          {licenseStatusLabel(req.status)}
                         </span>
                       </div>
                     </div>
@@ -1035,7 +1579,7 @@ export default function EmployeeDashboard({
                   <h3 className="text-md font-bold text-slate-900 flex items-center gap-2">
                     <Calendar className="w-5 h-5 text-indigo-600" /> Panel de Control de Licencias y Francos
                   </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">Feria judicial compensatorio, guardias acreditadas y otras licencias tramitadas por artículos.</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Feria judicial, compensatorios, guardias acreditadas y otras licencias tramitadas por artículos.</p>
                 </div>
                 <span className="text-xs bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold px-3 py-1 rounded-full font-mono">
                   {employee.dependency}
@@ -1046,7 +1590,7 @@ export default function EmployeeDashboard({
                 {/* Bloque Izquierdo: Feria Judicial & Compensatorios (Fórmula) */}
                 <div className="lg:col-span-7 space-y-4">
                   <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5 mb-1">
-                    ⚖️ Feria Judicial & Compensatorios (Art. 14)
+                     Feria Judicial & Compensatorios (Art. 14)
                   </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="bg-white p-3.5 rounded-2xl border border-indigo-100 shadow-xs">
@@ -1082,7 +1626,7 @@ export default function EmployeeDashboard({
                 <div className="lg:col-span-5 space-y-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
                   <div className="flex justify-between items-center pb-2 border-b border-slate-100">
                     <h4 className="text-[11px] font-black text-slate-700 uppercase tracking-widest flex items-center gap-1.5">
-                      📑 Registro de Otros Artículos
+                       Registro de Otros Artículos
                     </h4>
                     <span className="text-[9.5px] bg-slate-100 text-slate-700 font-bold px-2 py-0.5 rounded font-mono">
                       {otherLicenses.length} {otherLicenses.length === 1 ? 'solicitud' : 'solicitudes'}
@@ -1119,7 +1663,7 @@ export default function EmployeeDashboard({
                                 req.status === 'aprobado' ? 'bg-emerald-50 text-emerald-800 border-emerald-250' :
                                 'bg-rose-50 text-rose-800 border-rose-200'
                               }`}>
-                                {req.status}
+                                {licenseStatusLabel(req.status)}
                               </span>
                             </div>
                           </div>
@@ -1198,14 +1742,9 @@ export default function EmployeeDashboard({
                           if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
                             const file = e.dataTransfer.files[0];
                             if (file.type.startsWith('image/')) {
-                              const reader = new FileReader();
-                              reader.onload = (event) => {
-                                if (event.target?.result) {
-                                  onUpdateAvatar(employee.id, event.target.result as string);
-                                  triggerAlert('success', '¡Excelente! Foto de perfil cambiada correctamente.');
-                                }
-                              };
-                              reader.readAsDataURL(file);
+                              Promise.resolve(onUpdateAvatar(employee.id, file))
+                                .then(() => triggerAlert('success', 'Foto de perfil cambiada correctamente.'))
+                                .catch(() => triggerAlert('error', 'No se pudo cambiar la foto de perfil.'));
                             } else {
                               triggerAlert('error', 'El archivo debe ser una imagen válida (PNG o JPG).');
                             }
@@ -1222,14 +1761,9 @@ export default function EmployeeDashboard({
                           onChange={(e) => {
                             if (e.target.files && e.target.files.length > 0) {
                               const file = e.target.files[0];
-                              const reader = new FileReader();
-                              reader.onload = (event) => {
-                                if (event.target?.result) {
-                                  onUpdateAvatar(employee.id, event.target.result as string);
-                                  triggerAlert('success', '¡Excelente! Foto de perfil cambiada correctamente.');
-                                }
-                              };
-                              reader.readAsDataURL(file);
+                              Promise.resolve(onUpdateAvatar(employee.id, file))
+                                .then(() => triggerAlert('success', 'Foto de perfil cambiada correctamente.'))
+                                .catch(() => triggerAlert('error', 'No se pudo cambiar la foto de perfil.'));
                             }
                           }}
                         />
@@ -1325,7 +1859,7 @@ export default function EmployeeDashboard({
                         type="password"
                         value={currentPasswordInput}
                         onChange={(e) => setCurrentPasswordInput(e.target.value)}
-                        placeholder="••••••••"
+                        placeholder="********"
                         className="w-full text-xs font-semibold border border-gray-300 rounded-xl px-3 py-2.5 bg-slate-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-900"
                         required
                       />
@@ -1476,4 +2010,3 @@ export default function EmployeeDashboard({
     </div>
   );
 }
-

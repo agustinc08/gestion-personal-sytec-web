@@ -9,4 +9,6 @@ export const licensesApi = {
   update: async (id: string, payload: Partial<LicenseRequest>) => (await api.patch<LicenseRequest>(`/licenses/${id}`, payload)).data,
   approve: async (id: string) => (await api.patch<LicenseRequest>(`/licenses/${id}/approve`)).data,
   reject: async (id: string) => (await api.patch<LicenseRequest>(`/licenses/${id}/reject`)).data,
+  remove: async (id: string) => (await api.delete(`/licenses/${id}`)).data,
+  clear: async () => (await api.delete('/licenses')).data,
 };

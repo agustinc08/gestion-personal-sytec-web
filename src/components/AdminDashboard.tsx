@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
-import { Employee, WorkLog, Project, LicenseRequest, LicenseRule, StrikeConfig } from '../types';
+﻿import React, { useEffect, useState } from 'react';
+import { statisticsApi } from '../api/statistics.api';
+import { Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, LicenseArticle, ActivityType, StatisticsResponse } from '../types';
+import { activityTypeLabel, deploymentEnvironmentLabel, deploymentStatusLabel, difficultyLabel, licenseStatusLabel, projectStatusLabel, statColumnLabel } from '../utils/labels';
 import { 
   Users, Calendar, Briefcase, Plus, Check, X, FileText, 
   User, ShieldAlert, Award, AlertCircle, FilePlus, ChevronRight, Settings, ArrowRight, Trash2, Key, ArrowUpDown,
-  ArrowLeft, History, MessageSquare, Send
+  ArrowLeft, History, MessageSquare, Send, BarChart3, Upload
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -12,20 +14,32 @@ interface AdminDashboardProps {
   projects: Project[];
   licenseRequests: LicenseRequest[];
   licenseRules: LicenseRule[];
+  licenseArticles: LicenseArticle[];
   dependencies: string[];
   strikeConfig: StrikeConfig;
   currentAdmin: Employee;
   onUpdateStrikeConfig: (config: StrikeConfig) => void;
   onApproveRejectRequest: (id: string, status: 'aprobado' | 'rechazado') => any;
   onAddProject: (proj: Omit<Project, 'id' | 'status'>) => any;
-  onUpdateProject?: (proj: Project) => void;
+  onUpdateProject?: (proj: Project) => Promise<Project> | void;
+  onAddProjectUpdate?: (projectId: string, update: string | (Partial<ProjectUpdate> & { content: string })) => Promise<Project> | void;
+  onAddDeployment?: (projectId: string, payload: any) => Promise<any> | void;
   onAddManualLicense: (req: Omit<LicenseRequest, 'id' | 'status' | 'dateRequested'> & { status: 'pendiente' | 'aprobado' }) => any;
   onAddEmployee: (emp: any) => any;
-  onUpdateEmployee: (emp: Employee) => void;
+  onUpdateEmployee: (emp: Employee) => Promise<Employee> | void;
+  onUpdateAvatar?: (employeeId: string, avatar: string | File) => Promise<Employee> | void;
   onSwapStrikeDutyOrders?: (empIdA: string, empIdB: string) => void;
   onDeleteEmployee?: (id: string) => void;
-  onUpdateLicenseRequest: (req: LicenseRequest) => void;
-  onDeleteLicenseRequest: (id: string) => void;
+  onUpdateLicenseRequest: (req: LicenseRequest) => Promise<void> | void;
+  onDeleteLicenseRequest: (id: string) => Promise<void> | void;
+  onClearLicenses?: () => Promise<void> | void;
+  onResetGuardias?: (id: string) => Promise<Employee> | void;
+  onCreateLicenseArticle?: (payload: Partial<LicenseArticle>) => Promise<LicenseArticle> | void;
+  onUpdateLicenseArticle?: (id: string, payload: Partial<LicenseArticle>) => Promise<LicenseArticle> | void;
+  onUploadLicenseTemplate?: (id: string, file: File) => Promise<LicenseArticle> | void;
+  onAddLicenseArticleField?: (articleId: string, payload: any) => Promise<any> | void;
+  onGenerateLicensePdf?: (licenseId: string, values: Record<string, string>) => Promise<string> | void;
+  onGenerateArticlePdf?: (articleId: string, values: Record<string, string>) => Promise<string> | void;
   remindedEmpIds: string[];
   setRemindedEmpIds: React.Dispatch<React.SetStateAction<string[]>>;
 }
@@ -36,6 +50,7 @@ export default function AdminDashboard({
   projects,
   licenseRequests,
   licenseRules,
+  licenseArticles,
   dependencies,
   strikeConfig,
   currentAdmin,
@@ -43,36 +58,149 @@ export default function AdminDashboard({
   onApproveRejectRequest,
   onAddProject,
   onUpdateProject,
+  onAddProjectUpdate,
+  onAddDeployment,
   onAddManualLicense,
   onAddEmployee,
   onUpdateEmployee,
+  onUpdateAvatar,
   onSwapStrikeDutyOrders,
   onDeleteEmployee,
   onUpdateLicenseRequest,
   onDeleteLicenseRequest,
+  onClearLicenses,
+  onResetGuardias,
+  onCreateLicenseArticle,
+  onUpdateLicenseArticle,
+  onUploadLicenseTemplate,
+  onAddLicenseArticleField,
+  onGenerateLicensePdf,
+  onGenerateArticlePdf,
   remindedEmpIds,
   setRemindedEmpIds,
 }: AdminDashboardProps) {
-  const [adminTab, setAdminTab] = useState<'employees' | 'attendance' | 'projects' | 'strikes' | 'settings' | 'profile'>('employees');
+  const [adminTab, setAdminTab] = useState<'employees' | 'attendance' | 'projects' | 'statistics' | 'strikes' | 'settings' | 'profile'>('employees');
 
   const todayStr = new Date().toISOString().split('T')[0];
   const nonAdminEmployees = employees.filter(e => !e.isAdmin);
   const agentsWithoutLog = nonAdminEmployees.filter(emp => {
     return !workLogs.some(log => log.employeeId === emp.id && log.date === todayStr);
   });
+  const projectStats = React.useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const in7 = new Date(today.getTime() + 7 * 86400000);
+    const in15 = new Date(today.getTime() + 15 * 86400000);
+    const byStatus = (status: Project['status']) => projects.filter((p) => p.status === status).length;
+    const deadlineDate = (project: Project) => project.deadline ? new Date(`${project.deadline}T00:00:00`) : null;
+    return {
+      total: projects.length,
+      inProgress: byStatus('en_desarrollo'),
+      readyGit: byStatus('listo_git'),
+      readyDocker: byStatus('listo_docker'),
+      deployed: byStatus('deployado'),
+      finished: projects.filter((p) => p.status === 'completado' || p.status === 'terminado').length,
+      redesign: projects.filter((p) => p.needsRedesign || p.status === 'necesita_rediseno').length,
+      rework: projects.filter((p) => p.needsRework || p.status === 'necesita_rehacer').length,
+      overdue: projects.filter((p) => { const d = deadlineDate(p); return d && d < today; }).length,
+      dueToday: projects.filter((p) => { const d = deadlineDate(p); return d && d.getTime() === today.getTime(); }).length,
+      dueThisWeek: projects.filter((p) => { const d = deadlineDate(p); return d && d >= today && d <= in7; }).length,
+      dueIn15: projects.filter((p) => { const d = deadlineDate(p); return d && d > in7 && d <= in15; }).length,
+      withoutDeadline: projects.filter((p) => !p.deadline).length,
+      withoutOwner: projects.filter((p) => !p.ownerId).length,
+    };
+  }, [projects]);
+
+  const activityLabels: Record<ActivityType, string> = {
+    PROJECT: 'Proyecto',
+    SUPPORT: 'Soporte',
+    MAINTENANCE: 'Mantenimiento',
+    DEPLOY: 'Deploy',
+    MEETING: 'Reunión',
+    DOCUMENTATION: 'Documentación',
+    OTHER: 'Otro',
+  };
 
   // Selected employee detail state
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(employees[0]?.id || null);
 
   // Selected project for detail view state
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [isEditingProject, setIsEditingProject] = useState(false);
   const [newUpdateText, setNewUpdateText] = useState('');
+  const [newUpdateTitle, setNewUpdateTitle] = useState('');
+  const [newUpdateStatus, setNewUpdateStatus] = useState('');
+  const [newUpdateBlockers, setNewUpdateBlockers] = useState('');
+  const [newUpdateNextStep, setNewUpdateNextStep] = useState('');
+  const [newUpdateHours, setNewUpdateHours] = useState('');
+  const [newUpdateActivityType, setNewUpdateActivityType] = useState<ActivityType>('PROJECT');
 
   // New project state
   const [projName, setProjName] = useState('');
   const [projDesc, setProjDesc] = useState('');
   const [projDependency, setProjDependency] = useState(dependencies[0] || '');
   const [projAssignedIds, setProjAssignedIds] = useState<string[]>([]);
+  const [projYear, setProjYear] = useState(new Date().getFullYear());
+  const [projDifficulty, setProjDifficulty] = useState<Project['difficulty']>('MEDIUM');
+  const [projDeadline, setProjDeadline] = useState('');
+  const [projOwnerId, setProjOwnerId] = useState('');
+  const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [projectYearFilter, setProjectYearFilter] = useState('todos');
+  const [projectDifficultyFilter, setProjectDifficultyFilter] = useState('todos');
+  const [projectStatusFilter, setProjectStatusFilter] = useState('todos');
+  const [projectOwnerFilter, setProjectOwnerFilter] = useState('todos');
+  const [projectDeadlineFilter, setProjectDeadlineFilter] = useState('todos');
+  const [projectRedesignFilter, setProjectRedesignFilter] = useState('todos');
+  const [projectReworkFilter, setProjectReworkFilter] = useState('todos');
+  const [statsYear, setStatsYear] = useState(String(new Date().getFullYear()));
+  const [statsMonth, setStatsMonth] = useState('todos');
+  const [statsEmployeeId, setStatsEmployeeId] = useState('todos');
+  const [statsProjectId, setStatsProjectId] = useState('todos');
+  const [statsActivityType, setStatsActivityType] = useState('todos');
+  const [statsProjectStatus, setStatsProjectStatus] = useState('todos');
+  const [statsDifficulty, setStatsDifficulty] = useState('todos');
+  const [statsFrom, setStatsFrom] = useState('');
+  const [statsTo, setStatsTo] = useState('');
+  const [statistics, setStatistics] = useState<StatisticsResponse | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [statsError, setStatsError] = useState('');
+  const [adminWorkLogYear, setAdminWorkLogYear] = useState(String(new Date().getFullYear()));
+  const [adminWorkLogMonth, setAdminWorkLogMonth] = useState(String(new Date().getMonth() + 1));
+  const [adminWorkLogEmployeeId, setAdminWorkLogEmployeeId] = useState('todos');
+  const [adminWorkLogMode, setAdminWorkLogMode] = useState('todos');
+  const [adminWorkLogActivityType, setAdminWorkLogActivityType] = useState('todos');
+  const [adminWorkLogProjectId, setAdminWorkLogProjectId] = useState('todos');
+
+  useEffect(() => {
+    if (adminTab !== 'statistics') return;
+    setStatsLoading(true);
+    setStatsError('');
+    statisticsApi.admin({
+      year: statsYear,
+      month: statsMonth,
+      employeeId: statsEmployeeId,
+      projectId: statsProjectId,
+      activityType: statsActivityType,
+      projectStatus: statsProjectStatus,
+      difficulty: statsDifficulty,
+      from: statsFrom,
+      to: statsTo,
+    })
+      .then(setStatistics)
+      .catch((error: any) => {
+        const status = error?.response?.status;
+        setStatsError(status === 403 ? 'No tenés permisos para ver estas estadísticas.' : 'No se pudieron cargar las estadísticas.');
+      })
+      .finally(() => setStatsLoading(false));
+  }, [adminTab, statsYear, statsMonth, statsEmployeeId, statsProjectId, statsActivityType, statsProjectStatus, statsDifficulty, statsFrom, statsTo]);
+
+  const [deployEnvironment, setDeployEnvironment] = useState('DEV');
+  const [deployStatus, setDeployStatus] = useState('SUCCESS');
+  const [deployApiCommit, setDeployApiCommit] = useState('');
+  const [deployWebCommit, setDeployWebCommit] = useState('');
+  const [deployServer, setDeployServer] = useState('');
+  const [deployNotes, setDeployNotes] = useState('');
 
   // Manual license registry state
   const [manualEmpId, setManualEmpId] = useState(employees[0]?.id || '');
@@ -81,6 +209,22 @@ export default function AdminDashboard({
   const [manualEnd, setManualEnd] = useState('');
   const [manualReason, setManualReason] = useState('');
   const [manualApprovedImmediately, setManualApprovedImmediately] = useState<boolean>(true);
+  const [articleCode, setArticleCode] = useState('ART_34');
+  const [articleTitle, setArticleTitle] = useState('Artículo 34');
+  const [articleDescription, setArticleDescription] = useState('');
+  const [editingArticleId, setEditingArticleId] = useState<string | null>(null);
+  const [editingArticleCode, setEditingArticleCode] = useState('');
+  const [editingArticleTitle, setEditingArticleTitle] = useState('');
+  const [editingArticleDescription, setEditingArticleDescription] = useState('');
+  const [selectedArticleId, setSelectedArticleId] = useState('');
+  const [fieldKey, setFieldKey] = useState('fullName');
+  const [fieldLabel, setFieldLabel] = useState('Nombre completo');
+  const [fieldType, setFieldType] = useState('TEXT');
+  const [fieldPage, setFieldPage] = useState(1);
+  const [fieldX, setFieldX] = useState(80);
+  const [fieldY, setFieldY] = useState(700);
+  const [fieldFontSize, setFieldFontSize] = useState(10);
+  const [fieldRequired, setFieldRequired] = useState(false);
 
   // New employee state
   const [newEmpName, setNewEmpName] = useState('');
@@ -110,12 +254,12 @@ export default function AdminDashboard({
   const [editLicenseStart, setEditLicenseStart] = useState('');
   const [editLicenseEnd, setEditLicenseEnd] = useState('');
   const [editLicenseReason, setEditLicenseReason] = useState('');
-  const [editLicenseStatus, setEditLicenseStatus] = useState<'pendiente' | 'aprobado' | 'rechazado'>('pendiente');
+  const [editLicenseStatus, setEditLicenseStatus] = useState<LicenseRequest['status']>('pendiente');
 
   // States for Admin's Self Profile
   const [adminProfileName, setAdminProfileName] = useState(currentAdmin.name);
   const [adminProfileEmail, setAdminProfileEmail] = useState(currentAdmin.email);
-  const [adminProfilePassword, setAdminProfilePassword] = useState(currentAdmin.password);
+  const [adminProfilePassword, setAdminProfilePassword] = useState('');
   const [adminProfileAvatar, setAdminProfileAvatar] = useState(currentAdmin.avatar || '');
 
   // States for general license list searching and filtering
@@ -126,7 +270,7 @@ export default function AdminDashboard({
     if (currentAdmin) {
       setAdminProfileName(currentAdmin.name);
       setAdminProfileEmail(currentAdmin.email);
-      setAdminProfilePassword(currentAdmin.password);
+      setAdminProfilePassword('');
       setAdminProfileAvatar(currentAdmin.avatar || '');
     }
   }, [currentAdmin]);
@@ -154,17 +298,19 @@ export default function AdminDashboard({
       return;
     }
     
-    onUpdateLicenseRequest({
+        Promise.resolve(onUpdateLicenseRequest({
       ...lic,
       article: editLicenseArticle,
       startDate: editLicenseStart,
       endDate: editLicenseEnd,
       reason: editLicenseReason,
       status: editLicenseStatus,
-    });
-    setEditingLicenseId(null);
-    triggerAlert('success', '¡Licencia modificada e impactada en los saldos dinámicos con éxito!');
-  };
+    }))
+      .then(() => {
+        setEditingLicenseId(null);
+        triggerAlert('success', 'Licencia modificada correctamente.');
+      })
+      .catch(() => triggerAlert('error', 'No se pudo modificar la licencia.'));};
 
   const startEditingProfile = (emp: Employee) => {
     setEditName(emp.name);
@@ -182,8 +328,8 @@ export default function AdminDashboard({
   const handleSaveProfileEdit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmp) return;
-    if (!editName.trim() || !editEmail.trim() || !editCuil.trim() || !editPassword.trim()) {
-      triggerAlert('error', 'Por favor, completá todos los campos obligatorios (Nombre, Email, CUIL, Clave).');
+    if (!editName.trim() || !editEmail.trim() || !editCuil.trim()) {
+      triggerAlert('error', 'Por favor, completá Nombre, Email y CUIL. La clave solo se completa si querés cambiarla.');
       return;
     }
 
@@ -192,7 +338,7 @@ export default function AdminDashboard({
       name: editName,
       email: editEmail,
       cuil: editCuil,
-      password: editPassword,
+      ...(editPassword.trim() ? { password: editPassword.trim() } : {}),
       dependency: editDependency,
       position: editPosition,
       totalLicenseDays: editTotalLicenseDays,
@@ -313,8 +459,32 @@ export default function AdminDashboard({
   const selectedEmpLicenses = selectedEmp 
     ? licenseRequests.filter(req => req.employeeId === selectedEmp.id).sort((a,b) => b.dateRequested.localeCompare(a.dateRequested))
     : [];
+  const adminFilteredWorkLogs = workLogs.filter((log) => (
+    String(new Date(`${log.date}T00:00:00`).getFullYear()) === adminWorkLogYear &&
+    String(new Date(`${log.date}T00:00:00`).getMonth() + 1) === adminWorkLogMonth &&
+    (adminWorkLogEmployeeId === 'todos' || log.employeeId === adminWorkLogEmployeeId) &&
+    (adminWorkLogMode === 'todos' || log.mode === adminWorkLogMode) &&
+    (adminWorkLogActivityType === 'todos' || log.activityType === adminWorkLogActivityType) &&
+    (adminWorkLogProjectId === 'todos' || log.projectId === adminWorkLogProjectId)
+  )).sort((a, b) => b.date.localeCompare(a.date));
 
-  const handleCreateProject = (e: React.FormEvent) => {
+  const resetProjectForm = () => {
+    setProjName('');
+    setProjDesc('');
+    setProjDependency(dependencies[0] || '');
+    setProjAssignedIds([]);
+    setProjYear(new Date().getFullYear());
+    setProjDifficulty('MEDIUM');
+    setProjDeadline('');
+    setProjOwnerId('');
+  };
+
+  const handleCancelCreateProject = () => {
+    resetProjectForm();
+    setIsCreateProjectOpen(false);
+  };
+
+  const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!projName.trim() || !projDesc.trim()) {
       triggerAlert('error', 'Por favor, completa el nombre y la descripción del proyecto.');
@@ -325,17 +495,27 @@ export default function AdminDashboard({
       return;
     }
 
-    onAddProject({
-      name: projName,
-      description: projDesc,
-      requesterDependency: projDependency,
-      assignedEmployeeIds: projAssignedIds,
-    });
+    setIsCreatingProject(true);
+    try {
+      await Promise.resolve(onAddProject({
+        name: projName,
+        description: projDesc,
+        requesterDependency: projDependency,
+        assignedEmployeeIds: projAssignedIds,
+        ownerId: projOwnerId || projAssignedIds[0],
+        year: projYear,
+        difficulty: projDifficulty,
+        deadline: projDeadline,
+      }));
 
-    setProjName('');
-    setProjDesc('');
-    setProjAssignedIds([]);
-    triggerAlert('success', 'Proyecto creado con éxito. Ahora los empleados pueden registrar avances vinculados.');
+      resetProjectForm();
+      setIsCreateProjectOpen(false);
+      triggerAlert('success', 'Proyecto creado con éxito. Ahora los empleados pueden registrar avances vinculados.');
+    } catch {
+      triggerAlert('error', 'No se pudo crear el proyecto. Revisá los datos e intentá nuevamente.');
+    } finally {
+      setIsCreatingProject(false);
+    }
   };
 
   const handleAddProjectUpdateByAdmin = (projectId: string) => {
@@ -343,41 +523,64 @@ export default function AdminDashboard({
       triggerAlert('error', 'Por favor, escribe el contenido de la actualización.');
       return;
     }
-    const proj = projects.find(p => p.id === projectId);
-    if (!proj) return;
-
-    const newUpdate = {
-      id: `upd-${Date.now()}`,
-      authorName: 'Administración',
-      date: `${new Date().toISOString().split('T')[0]} ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}`,
+    if (!onAddProjectUpdate) return;
+    Promise.resolve(onAddProjectUpdate(projectId, {
+      title: newUpdateTitle.trim(),
+      description: newUpdateText.trim(),
       content: newUpdateText.trim(),
-    };
-
-    const updatedProj: Project = {
-      ...proj,
-      updates: [...(proj.updates || []), newUpdate],
-    };
-
-    if (onUpdateProject) {
-      onUpdateProject(updatedProj);
-      setNewUpdateText('');
-      triggerAlert('success', 'Actualización de proyecto registrada con éxito.');
-    }
+      status: newUpdateStatus.trim(),
+      blockers: newUpdateBlockers.trim(),
+      nextStep: newUpdateNextStep.trim(),
+      hours: newUpdateHours ? Number(newUpdateHours) : undefined,
+      activityType: newUpdateActivityType,
+    }))
+      .then(() => {
+        setNewUpdateText('');
+        setNewUpdateTitle('');
+        setNewUpdateStatus('');
+        setNewUpdateBlockers('');
+        setNewUpdateNextStep('');
+        setNewUpdateHours('');
+        setNewUpdateActivityType('PROJECT');
+        triggerAlert('success', 'Actualización de proyecto registrada con éxito.');
+      })
+      .catch(() => triggerAlert('error', 'No se pudo registrar la actualización del proyecto.'));
   };
 
-  const handleChangeProjectStatusObj = (projectId: string, newStatus: 'vigente' | 'completado' | 'pausado') => {
-    const proj = projects.find(p => p.id === projectId);
-    if (!proj) return;
-
-    const updatedProj: Project = {
-      ...proj,
-      status: newStatus,
+  const handleSaveProjectDetails = (e: React.FormEvent<HTMLFormElement>, project: Project) => {
+    e.preventDefault();
+    if (!onUpdateProject) return;
+    const form = new FormData(e.currentTarget);
+    const assignedEmployeeIds = form.getAll('assignedEmployeeIds').map(String).filter(Boolean);
+    const updatedProject: Project = {
+      ...project,
+      name: String(form.get('name') || '').trim(),
+      description: String(form.get('description') || ''),
+      requesterDependency: String(form.get('requesterDependency') || ''),
+      status: String(form.get('status') || project.status) as Project['status'],
+      year: Number(form.get('year') || new Date().getFullYear()),
+      difficulty: String(form.get('difficulty') || 'MEDIUM') as Project['difficulty'],
+      deadline: String(form.get('deadline') || ''),
+      ownerId: String(form.get('ownerId') || ''),
+      assignedEmployeeIds,
+      repositoryWebUrl: String(form.get('repositoryWebUrl') || ''),
+      repositoryApiUrl: String(form.get('repositoryApiUrl') || ''),
+      branch: String(form.get('branch') || ''),
+      techStack: String(form.get('techStack') || ''),
+      notes: String(form.get('notes') || ''),
+      needsRedesign: form.get('needsRedesign') === 'on',
+      needsRework: form.get('needsRework') === 'on',
     };
-
-    if (onUpdateProject) {
-      onUpdateProject(updatedProj);
-      triggerAlert('success', `Estado de proyecto cambiado a "${newStatus.toUpperCase()}".`);
+    if (!updatedProject.name) {
+      triggerAlert('error', 'El proyecto necesita nombre.');
+      return;
     }
+    Promise.resolve(onUpdateProject(updatedProject))
+      .then(() => {
+        setIsEditingProject(false);
+        triggerAlert('success', 'Proyecto actualizado correctamente.');
+      })
+      .catch(() => triggerAlert('error', 'No se pudo actualizar el proyecto.'));
   };
 
   const handleCreateManualLicense = (e: React.FormEvent) => {
@@ -395,6 +598,7 @@ export default function AdminDashboard({
     onAddManualLicense({
       employeeId: manualEmpId,
       article: manualArticle,
+      articleId: licenseArticles.find((article) => article.title === manualArticle || article.code === manualArticle)?.id,
       startDate: manualStart,
       endDate: manualEnd,
       reason: manualReason,
@@ -405,6 +609,126 @@ export default function AdminDashboard({
     setManualEnd('');
     setManualReason('');
     triggerAlert('success', manualApprovedImmediately ? 'Licencia registrada y aprobada instantáneamente.' : 'Licencia registrada como pendiente.');
+  };
+
+  const handleCreateLicenseArticle = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!onCreateLicenseArticle || !articleCode.trim() || !articleTitle.trim()) return;
+    Promise.resolve(onCreateLicenseArticle({ code: articleCode, title: articleTitle, description: articleDescription, isActive: true }))
+      .then((article: any) => {
+        setSelectedArticleId(article?.id || '');
+        setArticleCode('');
+        setArticleTitle('');
+        setArticleDescription('');
+        triggerAlert('success', 'Artículo de licencia creado.');
+      })
+      .catch(() => triggerAlert('error', 'No se pudo crear el artículo.'));
+  };
+
+  const startEditLicenseArticle = (article: LicenseArticle) => {
+    setEditingArticleId(article.id);
+    setEditingArticleCode(article.code);
+    setEditingArticleTitle(article.title);
+    setEditingArticleDescription(article.description || '');
+  };
+
+  const handleSaveLicenseArticle = (article: LicenseArticle) => {
+    if (!onUpdateLicenseArticle || !editingArticleCode.trim() || !editingArticleTitle.trim()) {
+      triggerAlert('error', 'Completa codigo y nombre del artículo.');
+      return;
+    }
+    Promise.resolve(onUpdateLicenseArticle(article.id, {
+      code: editingArticleCode.trim(),
+      title: editingArticleTitle.trim(),
+      description: editingArticleDescription,
+      isActive: article.isActive,
+    }))
+      .then(() => {
+        setEditingArticleId(null);
+        triggerAlert('success', 'Artículo actualizado.');
+      })
+      .catch(() => triggerAlert('error', 'No se pudo actualizar el artículo.'));
+  };
+
+  const handleAddLicenseField = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedArticleId || !onAddLicenseArticleField) return;
+    Promise.resolve(onAddLicenseArticleField(selectedArticleId, {
+      key: fieldKey,
+      label: fieldLabel,
+      type: fieldType,
+      page: fieldPage,
+      x: fieldX,
+      y: fieldY,
+      fontSize: fieldFontSize,
+      required: fieldRequired,
+    }))
+      .then(() => triggerAlert('success', 'Campo de PDF agregado.'))
+      .catch(() => triggerAlert('error', 'No se pudo agregar el campo.'));
+  };
+
+  const handleGenerateLicensePdf = (req: LicenseRequest) => {
+    if (!onGenerateLicensePdf) return;
+    const sender = employees.find(e => e.id === req.employeeId);
+    const [firstName, ...lastParts] = (sender?.name || '').split(' ');
+    const days = Math.max(1, Math.round((+new Date(req.endDate) - +new Date(req.startDate)) / 86400000) + 1);
+    const defaults: Record<string, string> = {
+      employeeName: firstName || '',
+      employeeLastName: lastParts.join(' '),
+      fullName: sender?.name || '',
+      cuil: sender?.cuil || '',
+      position: sender?.position || '',
+      dependency: sender?.dependency || '',
+      startDate: req.startDate,
+      endDate: req.endDate,
+      days: String(days),
+      article: req.article,
+      notes: req.reason,
+    };
+    const editableValues = { ...defaults };
+    const fields: Array<[string, string]> = [
+      ['fullName', 'Nombre completo'],
+      ['employeeName', 'Nombre'],
+      ['employeeLastName', 'Apellido'],
+      ['cuil', 'CUIL'],
+      ['position', 'Cargo'],
+      ['dependency', 'Dependencia'],
+      ['startDate', 'Fecha inicio'],
+      ['endDate', 'Fecha fin'],
+      ['days', 'Dias'],
+      ['article', 'Artículo'],
+      ['notes', 'Notas'],
+    ];
+    for (const [key, label] of fields) {
+      const value = window.prompt(`${label} editable para imprimir:`, editableValues[key] || '');
+      if (value === null) return;
+      editableValues[key] = value;
+    }
+    Promise.resolve(onGenerateLicensePdf(req.id, editableValues))
+      .then(() => triggerAlert('success', 'PDF generado. Se abrio en una nueva pestaña.'))
+      .catch(() => triggerAlert('error', 'No se pudo generar el PDF. Verifica que la licencia tenga artículo y plantilla.'));
+  };
+
+  const handleTestArticlePdf = (article: LicenseArticle) => {
+    if (!onGenerateArticlePdf) return;
+    const values: Record<string, string> = {};
+    const fields = article.fields && article.fields.length > 0
+      ? article.fields
+      : [
+          { key: 'fullName', label: 'Nombre completo' },
+          { key: 'cuil', label: 'CUIL' },
+          { key: 'startDate', label: 'Fecha inicio' },
+          { key: 'endDate', label: 'Fecha fin' },
+          { key: 'days', label: 'Dias' },
+        ];
+    for (const field of fields) {
+      const value = window.prompt(`Valor de prueba para ${field.label}:`, field.key === 'days' ? '1' : '');
+      if (value === null) return;
+      values[field.key] = value;
+    }
+    Promise.resolve(onGenerateArticlePdf(article.id, values))
+      .then(() => triggerAlert('success', 'PDF de prueba generado.'))
+      .catch(() => triggerAlert('error', 'No se pudo generar la prueba. Verifica plantilla y campos.'));
   };
 
   const handleSaveStrikeConfig = (e: React.FormEvent) => {
@@ -456,22 +780,26 @@ export default function AdminDashboard({
     triggerAlert('success', `Empleado "${newEmpName}" con CUIL ${newEmpCuil} dado de alta con éxito con contraseña temporaria.`);
   };
 
-  const handleSaveAdminSelfProfile = (e: React.FormEvent) => {
+  const handleSaveAdminSelfProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!adminProfileName.trim() || !adminProfileEmail.trim() || !adminProfilePassword.trim()) {
-      triggerAlert('error', 'Por favor, completa los campos de Nombre, Correo y Contraseña.');
+    if (!adminProfileName.trim() || !adminProfileEmail.trim()) {
+      triggerAlert('error', 'Por favor, completa los campos de Nombre y Correo.');
       return;
     }
 
-    onUpdateEmployee({
-      ...currentAdmin,
-      name: adminProfileName,
-      email: adminProfileEmail,
-      password: adminProfilePassword,
-      avatar: adminProfileAvatar,
-    });
-
-    triggerAlert('success', '¡Tus datos de perfil administrativo se han actualizado correctamente!');
+    try {
+      await Promise.resolve(onUpdateEmployee({
+        ...currentAdmin,
+        name: adminProfileName,
+        email: adminProfileEmail,
+        avatar: adminProfileAvatar,
+        ...(adminProfilePassword.trim() ? { password: adminProfilePassword.trim() } : {}),
+      }));
+      setAdminProfilePassword('');
+      triggerAlert('success', 'Tus datos de perfil administrativo se actualizaron correctamente.');
+    } catch {
+      triggerAlert('error', 'No se pudo actualizar tu perfil.');
+    }
   };
 
   // Helper toggle day for remote ho creation
@@ -505,7 +833,7 @@ export default function AdminDashboard({
         }`}>
           {alertMsg.type === 'success' ? <Check className="w-5 h-5 text-emerald-600 flex-shrink-0" /> : <AlertCircle className="w-5 h-5 text-rose-600 flex-shrink-0" />}
           <div>
-            <p className="font-semibold text-sm">{alertMsg.type === 'success' ? 'Operación Exitosa' : 'Atención'}</p>
+            <p className="font-semibold text-sm">{alertMsg.type === 'success' ? 'Operación exitosa' : 'Atención'}</p>
             <p className="text-xs mt-0.5">{alertMsg.text}</p>
           </div>
         </div>
@@ -579,7 +907,7 @@ export default function AdminDashboard({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h3 className="text-md font-bold text-red-950 font-sans flex items-center gap-2">
-                    🚨 Control de Parte Diario Pendiente
+                     Control de Parte Diario Pendiente
                   </h3>
                   <p className="text-xs text-red-800 mt-1">
                     Hay <strong>{agentsWithoutLog.length} de {nonAdminEmployees.length} agentes</strong> que todavía no han cargado su ficha de tareas del día de hoy (<strong>{todayStr}</strong>).
@@ -625,7 +953,7 @@ export default function AdminDashboard({
                               : 'bg-red-600 hover:bg-red-700 text-white shadow-xs'
                           }`}
                         >
-                          {hasReminded ? '✓ Recordado' : 'Notificar'}
+                          {hasReminded ? 'Recordado' : 'Notificar'}
                         </button>
                       </div>
                     );
@@ -673,7 +1001,18 @@ export default function AdminDashboard({
           }`}
         >
           <Briefcase className="w-4 h-4" />
-          Proyectos Config. ({projects.length})
+          Proyectos ({projects.length})
+        </button>
+        <button
+          onClick={() => setAdminTab('statistics')}
+          className={`px-5 py-3 font-semibold text-sm border-b-2 flex items-center gap-2 whitespace-nowrap transition-all duration-200 ${
+            adminTab === 'statistics'
+              ? 'border-red-600 text-red-600 font-bold'
+              : 'border-transparent text-gray-500 hover:text-gray-900'
+          }`}
+        >
+          <BarChart3 className="w-4 h-4" />
+          Estadísticas
         </button>
         <button
           onClick={() => setAdminTab('strikes')}
@@ -776,7 +1115,7 @@ export default function AdminDashboard({
                     <form onSubmit={handleSaveProfileEdit} className="space-y-4">
                       <div className="flex justify-between items-center border-b pb-3 mb-1">
                         <div>
-                          <span className="text-xs font-black text-red-700 uppercase tracking-widest block">🔧 Gestión de Agente</span>
+                          <span className="text-xs font-black text-red-700 uppercase tracking-widest block"> Gestión de Agente</span>
                           <h4 className="text-md font-bold text-slate-800">Modificar Perfil: {selectedEmp.name}</h4>
                         </div>
                         <button
@@ -926,12 +1265,31 @@ export default function AdminDashboard({
                       {/* Head */}
                       <div className="flex items-start justify-between border-b pb-4">
                         <div className="flex items-center gap-4">
-                          <img 
-                            src={selectedEmp.avatar} 
-                            alt={selectedEmp.name} 
-                            className="w-16 h-16 rounded-xl object-cover border-2 border-slate-200 shadow-sm"
-                            referrerPolicy="no-referrer"
-                          />
+                          <div className="relative">
+                            <img
+                              src={selectedEmp.avatar}
+                              alt={selectedEmp.name}
+                              className="w-16 h-16 rounded-xl object-cover border-2 border-slate-200 shadow-sm"
+                              referrerPolicy="no-referrer"
+                            />
+                            {onUpdateAvatar && (
+                              <label className="absolute -bottom-2 -right-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-2 py-1 text-[9px] font-bold cursor-pointer shadow">
+                                Foto
+                                <input
+                                  type="file"
+                                  accept="image/jpeg,image/png,image/webp"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+                                    Promise.resolve(onUpdateAvatar(selectedEmp.id, file))
+                                      .then(() => triggerAlert('success', 'Foto de perfil actualizada.'))
+                                      .catch(() => triggerAlert('error', 'No se pudo actualizar la foto de perfil.'));
+                                  }}
+                                />
+                              </label>
+                            )}
+                          </div>
                           <div>
                             <span className="bg-red-50 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded border border-red-150">
                               {selectedEmp.dependency}
@@ -963,6 +1321,19 @@ export default function AdminDashboard({
                         <div>
                           <span className="text-[9px] uppercase text-gray-400 font-bold block">Acumulados (Guardias +)</span>
                           <span className="text-md font-bold font-mono text-indigo-600">+{selectedEmp.guardiasDone}d</span>
+                          {onResetGuardias && selectedEmp.guardiasDone > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                Promise.resolve(onResetGuardias(selectedEmp.id))
+                                  .then(() => triggerAlert('success', 'Guardias reseteadas a 0.'))
+                                  .catch(() => triggerAlert('error', 'No se pudieron resetear las guardias.'));
+                              }}
+                              className="mt-1 text-[9px] font-bold text-indigo-700 hover:text-indigo-900 underline"
+                            >
+                              Resetear a 0
+                            </button>
+                          )}
                         </div>
                         <div>
                           <span className="text-[9px] uppercase text-gray-400 font-bold block">Tomados (Compensatorios -)</span>
@@ -1005,7 +1376,12 @@ export default function AdminDashboard({
                           <div key={log.id} className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-xs">
                             <div className="flex items-center justify-between font-mono text-[10px] text-gray-400 mb-1">
                               <span>{log.date}</span>
-                              <span className="uppercase font-bold text-slate-700">{log.mode}</span>
+                              <span className="uppercase font-bold text-slate-700">{{
+                                presencial: 'Presencial',
+                                remoto: 'Remoto',
+                                mixto: 'Mixto',
+                                licencia: 'Licencia',
+                              }[log.mode] || log.mode}</span>
                             </div>
                             <p className="font-bold text-gray-900">{log.title}</p>
                             <p className="text-slate-600 mt-1 lines-2">{log.description}</p>
@@ -1137,7 +1513,7 @@ export default function AdminDashboard({
                                       lic.status === 'rechazado' ? 'bg-rose-50 text-rose-800 border-rose-200' : 
                                       'bg-amber-50 text-amber-800 border-amber-200'
                                     }`}>
-                                      {lic.status}
+                                      {licenseStatusLabel(lic.status)}
                                     </span>
                                     <div className="flex items-center gap-1.5 mt-1">
                                       <button
@@ -1147,6 +1523,18 @@ export default function AdminDashboard({
                                       >
                                         Modificar
                                       </button>
+                                      {lic.articleId && (
+                                        <>
+                                          <span className="text-[10px] text-slate-300 select-none">|</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleGenerateLicensePdf(lic)}
+                                            className="text-[10px] text-emerald-700 hover:text-emerald-900 font-bold underline cursor-pointer"
+                                          >
+                                            PDF
+                                          </button>
+                                        </>
+                                      )}
                                       <span className="text-[10px] text-slate-300 select-none">|</span>
                                       <button
                                         type="button"
@@ -1155,8 +1543,9 @@ export default function AdminDashboard({
                                             message: `¿Estás seguro/a de que deseas eliminar este registro de licencia (${lic.article})? Esta acción reajustará el saldo consumido del agente de forma reactiva.`,
                                             confirmText: 'Eliminar Licencia',
                                             onConfirm: () => {
-                                              onDeleteLicenseRequest(lic.id);
-                                              triggerAlert('success', `Se ha eliminado el registro de licencia del sistema.`);
+                                              Promise.resolve(onDeleteLicenseRequest(lic.id))
+                                                .then(() => triggerAlert('success', 'Se ha eliminado el registro de licencia del sistema.'))
+                                                .catch(() => triggerAlert('error', 'No se pudo eliminar la licencia.'));
                                             }
                                           });
                                         }}
@@ -1191,6 +1580,94 @@ export default function AdminDashboard({
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             {/* Left Col: Pending license requests & general list */}
             <div className="lg:col-span-7 space-y-6">
+              <div className="bg-white p-6 rounded-2xl border border-gray-150 shadow-sm">
+                <h3 className="text-lg font-bold text-slate-900 border-b pb-3 mb-4 flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-indigo-600" /> Artículos de licencia y plantillas PDF
+                </h3>
+                <form onSubmit={handleCreateLicenseArticle} className="grid grid-cols-1 md:grid-cols-4 gap-2 mb-4">
+                  <input value={articleCode} onChange={(e) => setArticleCode(e.target.value)} placeholder="ART_34" className="text-xs border rounded-xl px-3 py-2" />
+                  <input value={articleTitle} onChange={(e) => setArticleTitle(e.target.value)} placeholder="Artículo 34" className="text-xs border rounded-xl px-3 py-2" />
+                  <input value={articleDescription} onChange={(e) => setArticleDescription(e.target.value)} placeholder="Descripción" className="text-xs border rounded-xl px-3 py-2" />
+                  <button type="submit" className="bg-slate-900 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold px-3 py-2">Crear artículo</button>
+                </form>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {licenseArticles.map((article) => (
+                    <div key={article.id} className="border border-slate-150 rounded-xl p-3 bg-slate-50/60">
+                      <div className="flex items-start justify-between gap-2">
+                        {editingArticleId === article.id ? (
+                          <div className="grid grid-cols-1 gap-2 flex-1">
+                            <input value={editingArticleCode} onChange={(e) => setEditingArticleCode(e.target.value)} className="text-[10px] border rounded-lg px-2 py-1 font-mono" />
+                            <input value={editingArticleTitle} onChange={(e) => setEditingArticleTitle(e.target.value)} className="text-xs border rounded-lg px-2 py-1 font-bold" />
+                            <textarea value={editingArticleDescription} onChange={(e) => setEditingArticleDescription(e.target.value)} rows={2} className="text-[10px] border rounded-lg px-2 py-1" />
+                            <div className="flex gap-2">
+                              <button type="button" onClick={() => handleSaveLicenseArticle(article)} className="text-[10px] bg-slate-900 text-white px-2 py-1 rounded-lg font-bold">Guardar</button>
+                              <button type="button" onClick={() => setEditingArticleId(null)} className="text-[10px] bg-white border px-2 py-1 rounded-lg font-bold">Cancelar</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div>
+                            <p className="text-xs font-black text-slate-900">{article.title}</p>
+                            <p className="text-[10px] font-mono text-slate-500">{article.code}</p>
+                            {article.description && <p className="text-[10px] text-slate-600 mt-1">{article.description}</p>}
+                            <p className="text-[10px] text-slate-500 mt-1">{article.templatePdfName ? `PDF: ${article.templatePdfName}` : 'Sin plantilla PDF'}</p>
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => onUpdateLicenseArticle && Promise.resolve(onUpdateLicenseArticle(article.id, { isActive: !article.isActive })).catch(() => triggerAlert('error', 'No se pudo actualizar el artículo.'))}
+                          className={`text-[10px] font-bold px-2 py-1 rounded-lg ${article.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}
+                        >
+                          {article.isActive ? 'Activo' : 'Inactivo'}
+                        </button>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button type="button" onClick={() => startEditLicenseArticle(article)} className="text-[10px] bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 px-2 py-1 rounded-lg font-bold">Editar</button>
+                        <label className="text-[10px] bg-white border border-slate-200 hover:bg-indigo-50 text-indigo-700 px-2 py-1 rounded-lg font-bold cursor-pointer">
+                          Subir PDF
+                          <input
+                            type="file"
+                            accept="application/pdf"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (!file || !onUploadLicenseTemplate) return;
+                              Promise.resolve(onUploadLicenseTemplate(article.id, file))
+                                .then(() => triggerAlert('success', 'Plantilla PDF cargada.'))
+                                .catch(() => triggerAlert('error', 'No se pudo subir la plantilla PDF.'));
+                            }}
+                          />
+                        </label>
+                        <button type="button" onClick={() => setSelectedArticleId(article.id)} className="text-[10px] bg-indigo-600 text-white px-2 py-1 rounded-lg font-bold">Configurar campos</button>
+                        <button type="button" onClick={() => handleTestArticlePdf(article)} className="text-[10px] bg-emerald-600 text-white px-2 py-1 rounded-lg font-bold">Generar prueba</button>
+                      </div>
+                      {selectedArticleId === article.id && (
+                        <form onSubmit={handleAddLicenseField} className="mt-3 grid grid-cols-2 gap-2 border-t pt-3">
+                          <input value={fieldKey} onChange={(e) => setFieldKey(e.target.value)} placeholder="key" className="text-[10px] border rounded-lg px-2 py-1" />
+                          <input value={fieldLabel} onChange={(e) => setFieldLabel(e.target.value)} placeholder="Etiqueta" className="text-[10px] border rounded-lg px-2 py-1" />
+                          <select value={fieldType} onChange={(e) => setFieldType(e.target.value)} className="text-[10px] border rounded-lg px-2 py-1">
+                            <option value="TEXT">Texto</option>
+                            <option value="DATE">Fecha</option>
+                            <option value="NUMBER">Número</option>
+                            <option value="MULTILINE">Multilínea</option>
+                          </select>
+                          <input type="number" value={fieldPage} onChange={(e) => setFieldPage(Number(e.target.value))} placeholder="Página" className="text-[10px] border rounded-lg px-2 py-1" />
+                          <input type="number" value={fieldX} onChange={(e) => setFieldX(Number(e.target.value))} placeholder="X" className="text-[10px] border rounded-lg px-2 py-1" />
+                          <input type="number" value={fieldY} onChange={(e) => setFieldY(Number(e.target.value))} placeholder="Y" className="text-[10px] border rounded-lg px-2 py-1" />
+                          <input type="number" value={fieldFontSize} onChange={(e) => setFieldFontSize(Number(e.target.value))} placeholder="Fuente" className="text-[10px] border rounded-lg px-2 py-1" />
+                          <label className="text-[10px] flex items-center gap-1"><input type="checkbox" checked={fieldRequired} onChange={(e) => setFieldRequired(e.target.checked)} /> Requerido</label>
+                          <button type="submit" className="col-span-2 bg-slate-900 text-white rounded-lg px-2 py-1 text-[10px] font-bold">Agregar campo</button>
+                          <p className="col-span-2 text-[10px] text-slate-500">Coordenadas: origen abajo a la izquierda del PDF. Ajustar X/Y hasta ubicar el texto.</p>
+                          {(article.fields || []).map((field) => (
+                            <span key={field.id} className="text-[10px] bg-white border rounded px-2 py-1">{field.label}: p{field.page} x{field.x} y{field.y}</span>
+                          ))}
+                        </form>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               {/* Box 1: Pending License Requests */}
               <div className="bg-white p-6 rounded-2xl border border-gray-150 shadow-sm">
                 <h3 className="text-lg font-bold text-gray-900 border-b pb-3 mb-4 flex items-center gap-2">
@@ -1228,7 +1705,7 @@ export default function AdminDashboard({
 
                               {req.certificateName && (
                                 <div className="mt-2 text-[10px] font-mono text-slate-500 bg-white/40 p-1 rounded inline-block">
-                                  📎 Certificado Adjunto: <span className="font-bold underline text-indigo-700">{req.certificateName}</span>
+                                   Certificado Adjunto: <span className="font-bold underline text-indigo-700">{req.certificateName}</span>
                                 </div>
                               )}
                             </div>
@@ -1268,6 +1745,23 @@ export default function AdminDashboard({
                     <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-150 px-2.5 py-0.5 rounded-full font-bold">
                       {licenseRequests.length} Registros
                     </span>
+                    {onClearLicenses && licenseRequests.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDialog({
+                          message: '¿Eliminar todos los registros de licencias visibles? Esta accion persiste en PostgreSQL.',
+                          confirmText: 'Limpiar Licencias',
+                          onConfirm: () => {
+                            Promise.resolve(onClearLicenses())
+                              .then(() => triggerAlert('success', 'Licencias limpiadas correctamente.'))
+                              .catch(() => triggerAlert('error', 'No se pudieron limpiar las licencias.'));
+                          }
+                        })}
+                        className="text-[10px] bg-red-50 text-red-700 border border-red-150 px-2.5 py-0.5 rounded-full font-bold"
+                      >
+                        Limpiar
+                      </button>
+                    )}
                   </h3>
                   <p className="text-xs text-gray-400 mt-1 font-sans">
                     Control, edición y remoción unificada de todas las licencias del equipo (Aprobadas, Pendientes y Rechazadas).
@@ -1292,9 +1786,9 @@ export default function AdminDashboard({
                       className="w-full text-xs h-9 bg-white border border-gray-300 rounded-xl px-2.5 text-slate-700 focus:outline-none cursor-pointer font-medium"
                     >
                       <option value="todos">Todos los estados</option>
-                      <option value="pendiente">Pendientes ⏳</option>
-                      <option value="aprobado">Aprobadas ✅</option>
-                      <option value="rechazado">Rechazadas ❌</option>
+                      <option value="pendiente">Pendientes</option>
+                      <option value="aprobado">Aprobadas</option>
+                      <option value="rechazado">Rechazadas</option>
                     </select>
                   </div>
                 </div>
@@ -1455,7 +1949,7 @@ export default function AdminDashboard({
                                       )}
                                       {req.certificateName && (
                                         <div className="text-[9px] text-slate-500 mt-1 font-mono">
-                                          📎 Certificado: <span className="underline">{req.certificateName}</span>
+                                           Certificado: <span className="underline">{req.certificateName}</span>
                                         </div>
                                       )}
                                     </div>
@@ -1467,7 +1961,7 @@ export default function AdminDashboard({
                                       req.status === 'rechazado' ? 'bg-rose-50 text-rose-800 border-rose-200' : 
                                       'bg-amber-50 text-amber-800 border-amber-200'
                                     }`}>
-                                      {req.status}
+                                      {licenseStatusLabel(req.status)}
                                     </span>
                                     <div className="flex items-center gap-1.5">
                                       <button
@@ -1477,6 +1971,18 @@ export default function AdminDashboard({
                                       >
                                         Modificar
                                       </button>
+                                      {req.articleId && (
+                                        <>
+                                          <span className="text-[10px] text-slate-300 select-none">|</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleGenerateLicensePdf(req)}
+                                            className="text-[10px] text-emerald-700 hover:text-emerald-900 font-bold underline cursor-pointer"
+                                          >
+                                            PDF
+                                          </button>
+                                        </>
+                                      )}
                                       <span className="text-[10px] text-slate-300 select-none">|</span>
                                       <button
                                         type="button"
@@ -1485,8 +1991,9 @@ export default function AdminDashboard({
                                             message: `¿Estás seguro/a de que deseas eliminar este registro de licencia (${req.article}) de ${sender?.name || 'este agente'}? Esta acción reajustará el saldo consumido del agente de forma reactiva.`,
                                             confirmText: 'Eliminar Licencia',
                                             onConfirm: () => {
-                                              onDeleteLicenseRequest(req.id);
-                                              triggerAlert('success', `Se ha eliminado el registro de licencia de ${sender?.name}.`);
+                                              Promise.resolve(onDeleteLicenseRequest(req.id))
+                                                .then(() => triggerAlert('success', `Se ha eliminado el registro de licencia de ${sender?.name}.`))
+                                                .catch(() => triggerAlert('error', 'No se pudo eliminar la licencia.'));
                                             }
                                           });
                                         }}
@@ -1511,10 +2018,38 @@ export default function AdminDashboard({
                   <span>Listado de Asistencia y Partes Recientes</span>
                   <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded">Fichadas</span>
                 </h3>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
+                  <input type="number" value={adminWorkLogYear} onChange={(e) => setAdminWorkLogYear(e.target.value)} className="text-xs border border-slate-200 rounded-xl px-3 py-2" placeholder="Año" />
+                  <select value={adminWorkLogMonth} onChange={(e) => setAdminWorkLogMonth(e.target.value)} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
+                    {Array.from({ length: 12 }, (_, idx) => <option key={idx + 1} value={idx + 1}>{new Date(2026, idx, 1).toLocaleDateString('es-AR', { month: 'long' })}</option>)}
+                  </select>
+                  <select value={adminWorkLogEmployeeId} onChange={(e) => setAdminWorkLogEmployeeId(e.target.value)} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
+                    <option value="todos">Empleado</option>
+                    {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                  </select>
+                  <select value={adminWorkLogMode} onChange={(e) => setAdminWorkLogMode(e.target.value)} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
+                    <option value="todos">Modalidad</option>
+                    <option value="presencial">Presencial</option>
+                    <option value="remoto">Remoto</option>
+                    <option value="mixto">Mixto</option>
+                    <option value="licencia">Licencia</option>
+                  </select>
+                  <select value={adminWorkLogActivityType} onChange={(e) => setAdminWorkLogActivityType(e.target.value)} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
+                    <option value="todos">Actividad</option>
+                    {Object.entries(activityLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                  </select>
+                  <select value={adminWorkLogProjectId} onChange={(e) => setAdminWorkLogProjectId(e.target.value)} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
+                    <option value="todos">Proyecto</option>
+                    {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                  </select>
+                </div>
 
                 <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
-                  {workLogs.sort((a,b) => b.date.localeCompare(a.date)).map((log) => {
+                  {adminFilteredWorkLogs.length === 0 ? (
+                    <div className="border border-dashed border-slate-200 rounded-xl p-6 text-center text-sm text-slate-500">Sin registros para este mes.</div>
+                  ) : adminFilteredWorkLogs.map((log) => {
                     const emp = employees.find(e => e.id === log.employeeId);
+                    const linkedProject = projects.find((project) => project.id === log.projectId);
                     return (
                       <div key={log.id} className="flex items-start justify-between p-3 rounded-lg hover:bg-slate-50 transition-colors border text-xs">
                         <div className="flex items-start gap-2.5">
@@ -1530,15 +2065,26 @@ export default function AdminDashboard({
                               {log.date} en {emp?.dependency}
                             </span>
                             <p className="text-slate-600 mt-1">{log.title}</p>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {linkedProject && <span className="text-[9px] font-bold bg-emerald-50 border border-emerald-100 text-emerald-700 rounded px-1.5 py-0.5">{linkedProject.name}</span>}
+                              {log.activityType && <span className="text-[9px] font-bold bg-indigo-50 border border-indigo-100 text-indigo-700 rounded px-1.5 py-0.5">{activityTypeLabel(log.activityType)}</span>}
+                              {log.hours !== undefined && <span className="text-[9px] font-bold bg-slate-50 border border-slate-200 text-slate-700 rounded px-1.5 py-0.5">{log.hours} h</span>}
+                            </div>
                           </div>
                         </div>
 
                         <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
                           log.mode === 'presencial' ? 'bg-blue-50 text-blue-700' :
                           log.mode === 'remoto' ? 'bg-amber-50 text-amber-700' :
+                          log.mode === 'mixto' ? 'bg-emerald-50 text-emerald-700' :
                           'bg-purple-50 text-purple-700'
                         }`}>
-                          {log.mode}
+                          {{
+                            presencial: 'Presencial',
+                            remoto: 'Remoto',
+                            mixto: 'Mixto',
+                            licencia: 'Licencia',
+                          }[log.mode] || log.mode}
                         </span>
                       </div>
                     );
@@ -1583,6 +2129,11 @@ export default function AdminDashboard({
                     onChange={(e) => setManualArticle(e.target.value)}
                     className="w-full text-xs bg-white border border-gray-300 rounded-xl px-3 py-3 text-gray-800 focus:outline-none"
                   >
+                    {licenseArticles.filter((article) => article.isActive).map((article) => (
+                      <option key={article.id} value={article.title}>
+                        {article.title} {article.templatePdfName ? '(con PDF)' : ''}
+                      </option>
+                    ))}
                     {licenseRules.map((rule) => (
                       <option key={rule.id} value={rule.article}>
                         {rule.article} - {rule.name}
@@ -1660,7 +2211,7 @@ export default function AdminDashboard({
               }
 
               // Get employee/work logs updates for this project
-              const associatedLogs = workLogs.filter(w => (w?.title || '').toLowerCase().trim() === (selectedProj?.name || '').toLowerCase().trim());
+              const associatedLogs = workLogs.filter(w => w.projectId === selectedProj?.id || (w?.title || '').toLowerCase().trim() === (selectedProj?.name || '').toLowerCase().trim());
               const adminUpdates = selectedProj.updates || [];
 
               // Unify timeline
@@ -1673,7 +2224,13 @@ export default function AdminDashboard({
                     date: log.date,
                     authorName: emp ? emp.name : 'Agente',
                     avatar: emp?.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=Ag&backgroundColor=cbd5e1`,
+                    title: log.title,
                     content: log.description,
+                    activityType: undefined,
+                    blockers: undefined,
+                    nextStep: undefined,
+                    hours: undefined,
+                    progressStatus: undefined,
                     mode: log.mode
                   };
                 }),
@@ -1683,7 +2240,13 @@ export default function AdminDashboard({
                   date: upd.date,
                   authorName: upd.authorName,
                   avatar: `https://api.dicebear.com/7.x/initials/svg?seed=Ad&backgroundColor=6366f1`,
+                  title: upd.title,
                   content: upd.content,
+                  activityType: upd.activityType,
+                  blockers: upd.blockers,
+                  nextStep: upd.nextStep,
+                  hours: upd.hours,
+                  progressStatus: upd.status,
                   mode: undefined
                 }))
               ].sort((a, b) => b.date.localeCompare(a.date));
@@ -1694,9 +2257,12 @@ export default function AdminDashboard({
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-gray-150 shadow-xs">
                     <div className="flex items-center gap-3">
                       <button
-                        onClick={() => setSelectedProjectId(null)}
+                        onClick={() => {
+                          setSelectedProjectId(null);
+                          setIsEditingProject(false);
+                        }}
                         className="p-2 hover:bg-slate-100 rounded-xl border border-gray-200 transition-all text-gray-500 hover:text-gray-900 cursor-pointer"
-                        title="Volver al Listado"
+                        title="Volver al listado"
                       >
                         <ArrowLeft className="w-4 h-4" />
                       </button>
@@ -1712,27 +2278,127 @@ export default function AdminDashboard({
                               ? 'bg-amber-50 text-amber-800 border border-amber-100'
                               : 'bg-slate-100 text-slate-700'
                           }`}>
-                            {selectedProj.status === 'vigente' ? 'Vigente' : selectedProj.status === 'pausado' ? 'Pausado' : 'Completado'}
+                            {projectStatusLabel(selectedProj.status)}
                           </span>
                         </div>
                         <h4 className="text-xl font-black text-slate-900 mt-1">{selectedProj.name}</h4>
                       </div>
                     </div>
 
-                    {/* Quick status controls */}
-                    <div className="flex items-center gap-2 self-start sm:self-auto">
-                      <label className="text-xs font-bold text-gray-500 uppercase">Estado:</label>
-                      <select
-                        value={selectedProj.status}
-                        onChange={(e) => handleChangeProjectStatusObj(selectedProj.id, e.target.value as any)}
-                        className="text-xs font-semibold bg-white border border-gray-300 rounded-xl px-2.5 py-1.5 text-gray-850 focus:outline-none"
-                      >
-                        <option value="vigente">Vigente (Activo)</option>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingProject((current) => !current)}
+                      className="self-start sm:self-auto bg-slate-900 hover:bg-indigo-700 text-white rounded-xl px-4 py-2 text-xs font-bold transition-all"
+                    >
+                      {isEditingProject ? 'Cancelar edición' : 'Editar proyecto'}
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-2 bg-white p-4 rounded-2xl border border-gray-150 text-xs">
+                    <div><span className="block text-[9px] uppercase font-bold text-gray-400">Año</span><strong>{selectedProj.year || '-'}</strong></div>
+                    <div><span className="block text-[9px] uppercase font-bold text-gray-400">Dificultad</span><strong>{difficultyLabel(selectedProj.difficulty)}</strong></div>
+                    <div><span className="block text-[9px] uppercase font-bold text-gray-400">Fecha límite</span><strong>{selectedProj.deadline || 'Sin fecha'}</strong></div>
+                    <div><span className="block text-[9px] uppercase font-bold text-gray-400">Responsable</span><strong>{selectedProj.ownerName || 'Sin asignar'}</strong></div>
+                    <div><span className="block text-[9px] uppercase font-bold text-gray-400">Último deploy</span><strong>{selectedProj.deployments?.[0] ? `${deploymentEnvironmentLabel(selectedProj.deployments[0].environment)} ${deploymentStatusLabel(selectedProj.deployments[0].status)}` : 'Sin deploy'}</strong></div>
+                    <div><span className="block text-[9px] uppercase font-bold text-gray-400">Último avance</span><strong>{selectedProj.lastProgressDate ? new Date(selectedProj.lastProgressDate).toLocaleDateString('es-AR') : 'Sin avances'}</strong></div>
+                  </div>
+
+                  <div className="bg-white p-5 rounded-2xl border border-gray-150 shadow-sm space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                      <div>
+                        <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">Resumen del proyecto</h5>
+                        <p className="text-xs text-slate-600 mt-1 leading-relaxed">{selectedProj.description || 'Sin descripción cargada.'}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedProj.needsRedesign && <span className="px-3 py-1 rounded-full text-[10px] font-bold bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-100">Necesita rediseño</span>}
+                        {selectedProj.needsRework && <span className="px-3 py-1 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-100">Necesita rehacer</span>}
+                        {!selectedProj.needsRedesign && !selectedProj.needsRework && <span className="px-3 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">Sin alertas de revisión</span>}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 text-xs">
+                      <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                        <span className="block text-[9px] uppercase font-bold text-slate-400">Repositorio web</span>
+                        <strong className="break-all text-slate-700">{selectedProj.repositoryWebUrl || 'Sin cargar'}</strong>
+                      </div>
+                      <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                        <span className="block text-[9px] uppercase font-bold text-slate-400">Repositorio API</span>
+                        <strong className="break-all text-slate-700">{selectedProj.repositoryApiUrl || 'Sin cargar'}</strong>
+                      </div>
+                      <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                        <span className="block text-[9px] uppercase font-bold text-slate-400">Rama actual</span>
+                        <strong className="text-slate-700">{selectedProj.branch || 'Sin cargar'}</strong>
+                      </div>
+                      <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                        <span className="block text-[9px] uppercase font-bold text-slate-400">Tecnología / Stack</span>
+                        <strong className="text-slate-700">{selectedProj.techStack || 'Sin cargar'}</strong>
+                      </div>
+                    </div>
+                    {selectedProj.notes && (
+                      <div className="bg-amber-50 rounded-xl p-3 border border-amber-100 text-xs text-amber-900">
+                        <span className="block text-[9px] uppercase font-bold text-amber-600 mb-1">Notas</span>
+                        {selectedProj.notes}
+                      </div>
+                    )}
+                  </div>
+
+                  {isEditingProject && (
+                  <form onSubmit={(e) => handleSaveProjectDetails(e, selectedProj)} className="bg-white p-5 rounded-2xl border border-gray-150 shadow-sm">
+                    <div className="flex items-center justify-between gap-3 mb-4">
+                      <div>
+                        <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">Editar datos del proyecto</h5>
+                        <p className="text-[10px] text-slate-500">Permite completar proyectos viejos sin recrearlos.</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button type="button" onClick={() => setIsEditingProject(false)} className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl px-4 py-2 text-xs font-bold">Cancelar edición</button>
+                        <button type="submit" className="bg-slate-900 hover:bg-indigo-700 text-white rounded-xl px-4 py-2 text-xs font-bold">Guardar cambios</button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <input name="name" defaultValue={selectedProj.name} placeholder="Nombre" className="text-xs border rounded-xl px-3 py-2 md:col-span-2" />
+                      <select name="status" defaultValue={selectedProj.status} className="text-xs border rounded-xl px-3 py-2">
+                        <option value="vigente">Vigente</option>
+                        <option value="pendiente">Pendiente</option>
+                        <option value="en_desarrollo">En desarrollo</option>
+                        <option value="en_revision">En revisión</option>
+                        <option value="listo_git">Listo Git</option>
+                        <option value="rama_dev">Rama dev</option>
+                        <option value="listo_docker">Listo Docker</option>
+                        <option value="dockerizado">Dockerizado</option>
+                        <option value="deployado">Deployado</option>
+                        <option value="terminado">Terminado</option>
+                        <option value="necesita_rediseno">Necesita rediseño</option>
+                        <option value="necesita_rehacer">Necesita rehacer</option>
                         <option value="pausado">Pausado</option>
                         <option value="completado">Completado</option>
+                        <option value="archivado">Archivado</option>
                       </select>
+                      <textarea name="description" defaultValue={selectedProj.description} placeholder="Descripción" rows={3} className="text-xs border rounded-xl px-3 py-2 md:col-span-3" />
+                      <input name="requesterDependency" defaultValue={selectedProj.requesterDependency} placeholder="Dependencia" className="text-xs border rounded-xl px-3 py-2" />
+                      <input name="year" type="number" defaultValue={selectedProj.year || new Date().getFullYear()} placeholder="Año" className="text-xs border rounded-xl px-3 py-2" />
+                      <select name="difficulty" defaultValue={selectedProj.difficulty || 'MEDIUM'} className="text-xs border rounded-xl px-3 py-2">
+                        <option value="LOW">Baja</option>
+                        <option value="MEDIUM">Media</option>
+                        <option value="HIGH">Alta</option>
+                        <option value="CRITICAL">Crítica</option>
+                      </select>
+                      <input name="deadline" type="date" defaultValue={selectedProj.deadline || ''} className="text-xs border rounded-xl px-3 py-2" />
+                      <select name="ownerId" defaultValue={selectedProj.ownerId || ''} className="text-xs border rounded-xl px-3 py-2">
+                        <option value="">Sin responsable</option>
+                        {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                      </select>
+                      <select name="assignedEmployeeIds" multiple defaultValue={selectedProj.assignedEmployeeIds || []} className="text-xs border rounded-xl px-3 py-2 min-h-24">
+                        {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                      </select>
+                      <input name="repositoryWebUrl" defaultValue={selectedProj.repositoryWebUrl || ''} placeholder="Repo WEB" className="text-xs border rounded-xl px-3 py-2" />
+                      <input name="repositoryApiUrl" defaultValue={selectedProj.repositoryApiUrl || ''} placeholder="Repo API" className="text-xs border rounded-xl px-3 py-2" />
+                      <input name="branch" defaultValue={selectedProj.branch || ''} placeholder="Rama actual" className="text-xs border rounded-xl px-3 py-2" />
+                      <input name="techStack" defaultValue={selectedProj.techStack || ''} placeholder="Stack / tecnología" className="text-xs border rounded-xl px-3 py-2 md:col-span-2" />
+                      <textarea name="notes" defaultValue={selectedProj.notes || ''} placeholder="Notas" rows={2} className="text-xs border rounded-xl px-3 py-2 md:col-span-3" />
+                      <label className="text-xs font-bold text-slate-700 flex items-center gap-2"><input name="needsRedesign" type="checkbox" defaultChecked={!!selectedProj.needsRedesign} /> Necesita rediseño</label>
+                      <label className="text-xs font-bold text-slate-700 flex items-center gap-2"><input name="needsRework" type="checkbox" defaultChecked={!!selectedProj.needsRework} /> Necesita rehacer</label>
                     </div>
-                  </div>
+                  </form>
+                  )}
 
                   {/* Body Content Details */}
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -1740,7 +2406,7 @@ export default function AdminDashboard({
                     {/* Left side actions and team stats */}
                     <div className="lg:col-span-5 space-y-6">
                       
-                      {/* Subir Actualizacion card */}
+                      {/* Subir Actualización card */}
                       <div className="bg-white p-6 rounded-2xl border border-gray-150 shadow-sm">
                         <h5 className="text-xs font-black text-indigo-700 uppercase tracking-wider mb-2 flex items-center gap-2">
                           <MessageSquare className="w-4 h-4" /> Cargar Actualización Oficial
@@ -1750,6 +2416,12 @@ export default function AdminDashboard({
                         </p>
 
                         <div className="space-y-4">
+                          <input
+                            value={newUpdateTitle}
+                            onChange={(e) => setNewUpdateTitle(e.target.value)}
+                            placeholder="Título del avance"
+                            className="w-full text-xs border border-gray-200 rounded-xl p-3 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
                           <div>
                             <textarea
                               rows={4}
@@ -1759,6 +2431,21 @@ export default function AdminDashboard({
                               className="w-full text-xs border border-gray-200 rounded-xl p-3 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                             ></textarea>
                           </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <select value={newUpdateActivityType} onChange={(e) => setNewUpdateActivityType(e.target.value as ActivityType)} className="text-xs border border-gray-200 rounded-xl p-3">
+                              <option value="PROJECT">Proyecto</option>
+                              <option value="SUPPORT">Soporte</option>
+                              <option value="MAINTENANCE">Mantenimiento</option>
+                              <option value="DEPLOY">Deploy</option>
+                              <option value="MEETING">Reunión</option>
+                              <option value="DOCUMENTATION">Documentación</option>
+                              <option value="OTHER">Otro</option>
+                            </select>
+                            <input value={newUpdateStatus} onChange={(e) => setNewUpdateStatus(e.target.value)} placeholder="Estado del avance" className="text-xs border border-gray-200 rounded-xl p-3" />
+                            <input value={newUpdateHours} onChange={(e) => setNewUpdateHours(e.target.value)} type="number" min="0" step="0.25" placeholder="Horas dedicadas" className="text-xs border border-gray-200 rounded-xl p-3" />
+                            <input value={newUpdateBlockers} onChange={(e) => setNewUpdateBlockers(e.target.value)} placeholder="Bloqueos / problemas" className="text-xs border border-gray-200 rounded-xl p-3" />
+                            <input value={newUpdateNextStep} onChange={(e) => setNewUpdateNextStep(e.target.value)} placeholder="Próximo paso" className="text-xs border border-gray-200 rounded-xl p-3" />
+                          </div>
                           
                           <button
                             onClick={() => handleAddProjectUpdateByAdmin(selectedProj.id)}
@@ -1766,6 +2453,65 @@ export default function AdminDashboard({
                           >
                             <Send className="w-3.5 h-3.5" /> Publicar Novedad Directa
                           </button>
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-6 rounded-2xl border border-gray-150 shadow-sm">
+                        <h5 className="text-xs font-black text-violet-700 uppercase tracking-wider mb-3 flex items-center gap-2">
+                          <Briefcase className="w-4 h-4" /> Deploys
+                        </h5>
+                        <div className="grid grid-cols-2 gap-2 mb-3">
+                          <select value={deployEnvironment} onChange={(e) => setDeployEnvironment(e.target.value)} className="text-xs border rounded-lg px-2 py-2">
+                            <option value="LOCAL">LOCAL</option>
+                            <option value="DEV">DEV</option>
+                            <option value="TEST">TEST</option>
+                            <option value="PROD">PROD</option>
+                          </select>
+                          <select value={deployStatus} onChange={(e) => setDeployStatus(e.target.value)} className="text-xs border rounded-lg px-2 py-2">
+                            <option value="PENDING">Pendiente</option>
+                            <option value="SUCCESS">Correcto</option>
+                            <option value="FAILED">Fallido</option>
+                            <option value="ROLLED_BACK">Revertido</option>
+                          </select>
+                          <input value={deployApiCommit} onChange={(e) => setDeployApiCommit(e.target.value)} placeholder="commit API" className="text-xs border rounded-lg px-2 py-2" />
+                          <input value={deployWebCommit} onChange={(e) => setDeployWebCommit(e.target.value)} placeholder="commit WEB" className="text-xs border rounded-lg px-2 py-2" />
+                          <input value={deployServer} onChange={(e) => setDeployServer(e.target.value)} placeholder="servidor" className="text-xs border rounded-lg px-2 py-2 col-span-2" />
+                          <textarea value={deployNotes} onChange={(e) => setDeployNotes(e.target.value)} placeholder="notas" className="text-xs border rounded-lg px-2 py-2 col-span-2" rows={2} />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!onAddDeployment) return;
+                            Promise.resolve(onAddDeployment(selectedProj.id, {
+                              environment: deployEnvironment,
+                              status: deployStatus,
+                              apiCommit: deployApiCommit,
+                              webCommit: deployWebCommit,
+                              server: deployServer,
+                              notes: deployNotes,
+                            })).then(() => {
+                              setDeployApiCommit('');
+                              setDeployWebCommit('');
+                              setDeployServer('');
+                              setDeployNotes('');
+                              triggerAlert('success', 'Deploy registrado.');
+                            }).catch(() => triggerAlert('error', 'No se pudo registrar el deploy.'));
+                          }}
+                          className="w-full bg-violet-600 hover:bg-violet-700 text-white rounded-xl py-2 text-xs font-bold"
+                        >
+                          Registrar Deploy
+                        </button>
+                        <div className="mt-4 space-y-2 max-h-40 overflow-y-auto">
+                          {(selectedProj.deployments || []).map((deploy) => (
+                            <div key={deploy.id} className="text-xs border border-slate-100 rounded-lg p-2 bg-slate-50">
+                              <div className="flex justify-between font-bold text-slate-700">
+                                <span>{deploymentEnvironmentLabel(deploy.environment)} - {deploymentStatusLabel(deploy.status)}</span>
+                                <span>{new Date(deploy.deployedAt).toLocaleDateString('es-AR')}</span>
+                              </div>
+                              <p className="text-[10px] text-slate-500 mt-1">{deploy.apiCommit || '-'} / {deploy.webCommit || '-'}</p>
+                              {deploy.notes && <p className="text-[10px] text-slate-600 mt-1">{deploy.notes}</p>}
+                            </div>
+                          ))}
                         </div>
                       </div>
 
@@ -1821,7 +2567,7 @@ export default function AdminDashboard({
                           <h5 className="text-xs font-black text-slate-900 uppercase tracking-wider">Historial Integrado de Avances</h5>
                         </div>
                         <span className="text-[10px] bg-slate-100 text-slate-600 font-bold font-mono px-2 py-0.5 rounded">
-                          {combinedTimeline.length} actualizaciones en total
+                          {combinedTimeline.length} actualizaciónes en total
                         </span>
                       </div>
 
@@ -1872,9 +2618,20 @@ export default function AdminDashboard({
                                     </span>
                                   </div>
 
+                                  {item.title && <p className="text-xs font-black text-slate-900 mb-1">{item.title}</p>}
                                   <p className={`text-xs text-slate-700 leading-relaxed font-sans`}>
                                     {item.content}
                                   </p>
+
+                                  {(item.activityType || item.progressStatus || item.blockers || item.nextStep || item.hours !== undefined) && (
+                                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px]">
+                                      {item.activityType && <span className="bg-indigo-50 border border-indigo-100 rounded px-2 py-1"><b>Tipo:</b> {activityTypeLabel(item.activityType)}</span>}
+                                      {item.progressStatus && <span className="bg-slate-50 border rounded px-2 py-1"><b>Estado:</b> {item.progressStatus}</span>}
+                                      {item.hours !== undefined && <span className="bg-slate-50 border rounded px-2 py-1"><b>Horas:</b> {item.hours}</span>}
+                                      {item.blockers && <span className="bg-rose-50 border border-rose-100 rounded px-2 py-1"><b>Bloqueos:</b> {item.blockers}</span>}
+                                      {item.nextStep && <span className="bg-indigo-50 border border-indigo-100 rounded px-2 py-1"><b>Próximo:</b> {item.nextStep}</span>}
+                                    </div>
+                                  )}
 
                                   {item.mode && (
                                     <div className="mt-2 text-[9px] text-gray-405 font-mono flex items-center gap-1 bg-slate-50 w-max px-1.5 py-0.5 rounded border">
@@ -1894,16 +2651,73 @@ export default function AdminDashboard({
                 </div>
               );
             })() : (
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              <div className="space-y-6">
+                <section className="bg-white border border-gray-150 rounded-2xl p-4 shadow-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                    <div>
+                      <h3 className="text-sm font-black text-slate-900 uppercase tracking-wide">Resumen de proyectos</h3>
+                      <p className="text-[10px] text-slate-500">Estado general, vencimientos y alertas del inventario de sistemas.</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3">
+                    {[
+                      ['Total proyectos', projectStats.total, 'text-slate-800'],
+                      ['En desarrollo', projectStats.inProgress, 'text-indigo-700'],
+                      ['Listos Git', projectStats.readyGit, 'text-blue-700'],
+                      ['Listos Docker', projectStats.readyDocker, 'text-cyan-700'],
+                      ['Deployados', projectStats.deployed, 'text-emerald-700'],
+                      ['Terminados', projectStats.finished, 'text-slate-700'],
+                      ['Rediseño', projectStats.redesign, 'text-fuchsia-700'],
+                      ['Rehacer', projectStats.rework, 'text-rose-700'],
+                      ['Vencidos', projectStats.overdue, 'text-red-700'],
+                      ['Vencen hoy', projectStats.dueToday, 'text-orange-700'],
+                      ['Prox. 15 días', projectStats.dueIn15, 'text-amber-700'],
+                      ['Sin fecha', projectStats.withoutDeadline, 'text-gray-600'],
+                    ].map(([label, value, color]) => (
+                      <div key={String(label)} className="bg-slate-50 border border-gray-150 rounded-2xl p-3">
+                        <span className="block text-[9px] uppercase font-black text-slate-400 tracking-wide">{label}</span>
+                        <strong className={`text-xl font-black font-mono ${color}`}>{value}</strong>
+                      </div>
+                    ))}
+                  </div>
+                  {(projectStats.overdue > 0 || projectStats.dueToday > 0 || projectStats.dueThisWeek > 0 || projectStats.withoutOwner > 0 || projectStats.withoutDeadline > 0) && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 mt-4">
+                      <h4 className="text-[10px] font-black uppercase tracking-wider text-amber-900 mb-2">Alertas de proyectos</h4>
+                      <div className="flex flex-wrap gap-2 text-[10px] font-bold">
+                        {projectStats.overdue > 0 && <span className="bg-red-100 text-red-800 px-2 py-1 rounded-lg">Vencidos: {projectStats.overdue}</span>}
+                        {projectStats.dueToday > 0 && <span className="bg-orange-100 text-orange-800 px-2 py-1 rounded-lg">Vencen hoy: {projectStats.dueToday}</span>}
+                        {projectStats.dueThisWeek > 0 && <span className="bg-amber-100 text-amber-800 px-2 py-1 rounded-lg">Esta semana: {projectStats.dueThisWeek}</span>}
+                        {projectStats.dueIn15 > 0 && <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded-lg">En 15 días: {projectStats.dueIn15}</span>}
+                        {projectStats.withoutOwner > 0 && <span className="bg-slate-100 text-slate-700 px-2 py-1 rounded-lg">Sin responsable: {projectStats.withoutOwner}</span>}
+                        {projectStats.withoutDeadline > 0 && <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded-lg">Sin fecha límite: {projectStats.withoutDeadline}</span>}
+                      </div>
+                    </div>
+                  )}
+                </section>
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                 {/* Form list charging area */}
                 <div className="lg:col-span-5 bg-white p-6 rounded-2xl border border-gray-150 shadow-sm self-start animate-fade-in">
-                  <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                    <FilePlus className="w-5 h-5 text-indigo-600" /> Crear Proyecto Vigente
-                  </h3>
-                  <p className="text-xs text-gray-500 mb-5">
-                    Crea un proyecto para que los empleados asignados puedan reportar tareas asociadas mediante coincidencia de título.
-                  </p>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-bold text-gray-900 mb-2 flex items-center gap-2">
+                        <FilePlus className="w-5 h-5 text-indigo-600" /> Crear Proyecto Vigente
+                      </h3>
+                      <p className="text-xs text-gray-500 mb-5">
+                        Crea un proyecto para que los empleados asignados puedan reportar tareas asociadas mediante coincidencia de título.
+                      </p>
+                    </div>
+                    {!isCreateProjectOpen && (
+                      <button
+                        type="button"
+                        onClick={() => setIsCreateProjectOpen(true)}
+                        className="shrink-0 cursor-pointer bg-slate-900 hover:bg-black text-white font-bold text-xs px-3 py-2 rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
+                      >
+                        <Plus className="w-4 h-4" /> Nuevo proyecto
+                      </button>
+                    )}
+                  </div>
 
+                  {isCreateProjectOpen && (
                   <form onSubmit={handleCreateProject} className="space-y-4">
                     <div>
                       <label className="block text-[10px] font-bold text-gray-600 uppercase tracking-wide mb-1.5">
@@ -1931,6 +2745,54 @@ export default function AdminDashboard({
                           <option key={idx} value={dep}>{dep}</option>
                         ))}
                       </select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-600 uppercase tracking-wide mb-1.5">Año</label>
+                        <input
+                          type="number"
+                          value={projYear}
+                          onChange={(e) => setProjYear(Number(e.target.value))}
+                          className="w-full text-xs bg-white border border-gray-300 rounded-xl px-3 py-3"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-600 uppercase tracking-wide mb-1.5">Dificultad</label>
+                        <select
+                          value={projDifficulty}
+                          onChange={(e) => setProjDifficulty(e.target.value as Project['difficulty'])}
+                          className="w-full text-xs bg-white border border-gray-300 rounded-xl px-3 py-3"
+                        >
+                          <option value="LOW">Baja</option>
+                          <option value="MEDIUM">Media</option>
+                          <option value="HIGH">Alta</option>
+                          <option value="CRITICAL">Crítica</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-600 uppercase tracking-wide mb-1.5">Fecha limite</label>
+                        <input
+                          type="date"
+                          value={projDeadline}
+                          onChange={(e) => setProjDeadline(e.target.value)}
+                          className="w-full text-xs bg-white border border-gray-300 rounded-xl px-3 py-3"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-600 uppercase tracking-wide mb-1.5">Responsable</label>
+                        <select
+                          value={projOwnerId}
+                          onChange={(e) => setProjOwnerId(e.target.value)}
+                          className="w-full text-xs bg-white border border-gray-300 rounded-xl px-3 py-3"
+                        >
+                          <option value="">Primer asignado</option>
+                          {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                        </select>
+                      </div>
                     </div>
 
                     <div>
@@ -1972,18 +2834,79 @@ export default function AdminDashboard({
                       ></textarea>
                     </div>
 
-                    <button
-                      type="submit"
-                      className="w-full cursor-pointer bg-slate-900 hover:bg-black text-white font-bold text-xs py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
-                    >
-                      <Plus className="w-4 h-4" /> Publicar Proyecto Vigente
-                    </button>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <button
+                        type="button"
+                        onClick={handleCancelCreateProject}
+                        disabled={isCreatingProject}
+                        className="flex-1 cursor-pointer bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-bold text-xs py-3 rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        <X className="w-4 h-4" /> Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isCreatingProject}
+                        className="flex-1 cursor-pointer bg-slate-900 hover:bg-black text-white font-bold text-xs py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        <Plus className="w-4 h-4" /> {isCreatingProject ? 'Guardando...' : 'Publicar Proyecto Vigente'}
+                      </button>
+                    </div>
                   </form>
+                  )}
                 </div>
 
                 {/* List & details of projects with live synced updates */}
                 <div className="lg:col-span-7 space-y-4 animate-fade-in">
                   <h3 className="text-lg font-bold text-slate-900">Proyectos de la Organización</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 bg-white border border-gray-150 rounded-xl p-3">
+                    <select value={projectYearFilter} onChange={(e) => setProjectYearFilter(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
+                      <option value="todos">Todos los años</option>
+                      {Array.from(new Set(projects.map((p) => p.year).filter(Boolean))).map((year) => <option key={year} value={year}>{year}</option>)}
+                    </select>
+                    <select value={projectDifficultyFilter} onChange={(e) => setProjectDifficultyFilter(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
+                      <option value="todos">Todas las dificultades</option>
+                      <option value="LOW">Baja</option>
+                      <option value="MEDIUM">Media</option>
+                      <option value="HIGH">Alta</option>
+                      <option value="CRITICAL">Crítica</option>
+                    </select>
+                    <select value={projectStatusFilter} onChange={(e) => setProjectStatusFilter(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
+                      <option value="todos">Todos los estados</option>
+                      <option value="vigente">Vigente</option>
+                      <option value="en_desarrollo">En desarrollo</option>
+                      <option value="listo_git">Listo Git</option>
+                      <option value="listo_docker">Listo Docker</option>
+                      <option value="deployado">Deployado</option>
+                      <option value="terminado">Terminado</option>
+                      <option value="necesita_rediseno">Necesita rediseño</option>
+                      <option value="necesita_rehacer">Necesita rehacer</option>
+                      <option value="pausado">Pausado</option>
+                      <option value="completado">Completado</option>
+                    </select>
+                    <select value={projectOwnerFilter} onChange={(e) => setProjectOwnerFilter(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
+                      <option value="todos">Todos los responsables</option>
+                      <option value="sin_responsable">Sin responsable</option>
+                      {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                    </select>
+                    <select value={projectDeadlineFilter} onChange={(e) => setProjectDeadlineFilter(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
+                      <option value="todos">Todos los vencimientos</option>
+                      <option value="vencido">Vencidos</option>
+                      <option value="vence_hoy">Vencen hoy</option>
+                      <option value="esta_semana">Esta semana</option>
+                      <option value="proximo">Próximos</option>
+                      <option value="sin_fecha">Sin fecha</option>
+                    </select>
+                    <select value={projectRedesignFilter} onChange={(e) => setProjectRedesignFilter(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
+                      <option value="todos">Rediseno: todos</option>
+                      <option value="true">Necesita rediseño</option>
+                      <option value="false">No necesita rediseño</option>
+                    </select>
+                    <select value={projectReworkFilter} onChange={(e) => setProjectReworkFilter(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
+                      <option value="todos">Rehacer: todos</option>
+                      <option value="true">Necesita rehacer</option>
+                      <option value="false">No necesita rehacer</option>
+                    </select>
+                  </div>
 
                   {projects.length === 0 ? (
                     <div className="bg-white p-12 text-center rounded-2xl border text-slate-400">
@@ -1992,8 +2915,16 @@ export default function AdminDashboard({
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {projects.map((proj) => {
-                        const associatedLogs = workLogs.filter(w => (w?.title || '').toLowerCase().trim() === (proj?.name || '').toLowerCase().trim());
+                      {projects.filter((proj) => (
+                        (projectYearFilter === 'todos' || String(proj.year) === projectYearFilter) &&
+                        (projectDifficultyFilter === 'todos' || proj.difficulty === projectDifficultyFilter) &&
+                        (projectStatusFilter === 'todos' || proj.status === projectStatusFilter) &&
+                        (projectOwnerFilter === 'todos' || (projectOwnerFilter === 'sin_responsable' ? !proj.ownerId : proj.ownerId === projectOwnerFilter)) &&
+                        (projectDeadlineFilter === 'todos' || proj.deadlineStatus === projectDeadlineFilter) &&
+                        (projectRedesignFilter === 'todos' || String(!!proj.needsRedesign || proj.status === 'necesita_rediseno') === projectRedesignFilter) &&
+                        (projectReworkFilter === 'todos' || String(!!proj.needsRework || proj.status === 'necesita_rehacer') === projectReworkFilter)
+                      )).map((proj) => {
+                        const associatedLogs = workLogs.filter(w => w.projectId === proj.id || (w?.title || '').toLowerCase().trim() === (proj?.name || '').toLowerCase().trim());
                         const adminUpdatesCount = proj.updates?.length || 0;
                         return (
                           <div key={proj.id} className="bg-white p-5 rounded-xl border hover:border-indigo-200 transition-all shadow-sm flex flex-col justify-between">
@@ -2009,11 +2940,17 @@ export default function AdminDashboard({
                                     ? 'bg-amber-50 text-amber-700'
                                     : 'bg-slate-100 text-slate-700'
                                 }`}>
-                                  {proj.status}
+                                  {projectStatusLabel(proj.status)}
                                 </span>
                               </div>
 
                               <h4 className="font-bold text-md text-slate-900 line-clamp-1">{proj.name}</h4>
+                              <div className="mt-1 flex flex-wrap gap-1.5 text-[9px] font-bold uppercase">
+                                <span className="bg-slate-50 border border-slate-200 text-slate-600 px-1.5 py-0.5 rounded">{proj.year || new Date().getFullYear()}</span>
+                                <span className="bg-indigo-50 border border-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">{difficultyLabel(proj.difficulty)}</span>
+                                {proj.deadline && <span className="bg-amber-50 border border-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Vence {proj.deadline}</span>}
+                                {proj.ownerName && <span className="bg-emerald-50 border border-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">{proj.ownerName}</span>}
+                              </div>
                               <p className="text-xs text-gray-500 mt-1 lines-2 leading-relaxed h-11 overflow-hidden">{proj.description}</p>
 
                               {/* Team quick indicator */}
@@ -2047,13 +2984,19 @@ export default function AdminDashboard({
                                 <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
                                   {adminUpdatesCount} directivas
                                 </span>
+                                <span className="text-violet-700 bg-violet-50 px-1.5 py-0.5 rounded">
+                                  {proj.deployments?.[0] ? `${deploymentEnvironmentLabel(proj.deployments[0].environment)} ${deploymentStatusLabel(proj.deployments[0].status)}` : 'sin deploy'}
+                                </span>
                               </div>
 
                               <button
-                                onClick={() => setSelectedProjectId(proj.id)}
+                                onClick={() => {
+                                  setSelectedProjectId(proj.id);
+                                  setIsEditingProject(false);
+                                }}
                                 className="w-full flex items-center justify-center gap-1 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
                               >
-                                Ingresar al Proyecto <ChevronRight className="w-4 h-4" />
+                                Ingresar al proyecto <ChevronRight className="w-4 h-4" />
                               </button>
                             </div>
                           </div>
@@ -2063,6 +3006,127 @@ export default function AdminDashboard({
                   )}
                 </div>
               </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {adminTab === 'statistics' && (
+          <div className="space-y-6 animate-fade-in">
+            <div className="bg-white border border-gray-150 rounded-2xl p-5 shadow-sm">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                    <BarChart3 className="w-5 h-5 text-indigo-600" /> Estadísticas de la oficina
+                  </h3>
+                  <p className="text-xs text-slate-500">Resumen anual/mensual de proyectos, avances, soporte, deploys y horas cargadas.</p>
+                </div>
+                {statsLoading && <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg">Cargando...</span>}
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2">
+                <input value={statsYear} onChange={(e) => setStatsYear(e.target.value)} placeholder="Año" className="text-xs border rounded-xl px-3 py-2" />
+                <select value={statsMonth} onChange={(e) => setStatsMonth(e.target.value)} className="text-xs border rounded-xl px-3 py-2">
+                  <option value="todos">Mes</option>
+                  {Array.from({ length: 12 }, (_, idx) => <option key={idx + 1} value={idx + 1}>{idx + 1}</option>)}
+                </select>
+                <select value={statsEmployeeId} onChange={(e) => setStatsEmployeeId(e.target.value)} className="text-xs border rounded-xl px-3 py-2">
+                  <option value="todos">Empleado</option>
+                  {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                </select>
+                <select value={statsProjectId} onChange={(e) => setStatsProjectId(e.target.value)} className="text-xs border rounded-xl px-3 py-2">
+                  <option value="todos">Proyecto</option>
+                  {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                </select>
+                <select value={statsActivityType} onChange={(e) => setStatsActivityType(e.target.value)} className="text-xs border rounded-xl px-3 py-2">
+                  <option value="todos">Actividad</option>
+                  {Object.entries(activityLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                </select>
+                <select value={statsProjectStatus} onChange={(e) => setStatsProjectStatus(e.target.value)} className="text-xs border rounded-xl px-3 py-2">
+                  <option value="todos">Estado</option>
+                  <option value="en_desarrollo">En desarrollo</option>
+                  <option value="listo_git">Listo Git</option>
+                  <option value="listo_docker">Listo Docker</option>
+                  <option value="deployado">Deployado</option>
+                  <option value="terminado">Terminado</option>
+                  <option value="completado">Completado</option>
+                  <option value="pausado">Pausado</option>
+                </select>
+                <select value={statsDifficulty} onChange={(e) => setStatsDifficulty(e.target.value)} className="text-xs border rounded-xl px-3 py-2">
+                  <option value="todos">Dificultad</option>
+                  <option value="LOW">Baja</option>
+                  <option value="MEDIUM">Media</option>
+                  <option value="HIGH">Alta</option>
+                  <option value="CRITICAL">Crítica</option>
+                </select>
+                <div className="grid grid-cols-2 gap-1">
+                  <input type="date" value={statsFrom} onChange={(e) => setStatsFrom(e.target.value)} className="text-[10px] border rounded-xl px-2 py-2" />
+                  <input type="date" value={statsTo} onChange={(e) => setStatsTo(e.target.value)} className="text-[10px] border rounded-xl px-2 py-2" />
+                </div>
+              </div>
+            </div>
+
+            {statsError && <div className="bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl p-4 text-sm font-bold">{statsError}</div>}
+            {!statsError && statistics && (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-9 gap-3">
+                  {[
+                    ['Total proyectos', statistics.summary.totalProjects],
+                    ['Terminados', statistics.summary.finishedProjects],
+                    ['En desarrollo', statistics.summary.inProgressProjects],
+                    ['Deployados', statistics.summary.deployedProjects],
+                    ['Vencidos', statistics.summary.overdueProjects],
+                    ['Avances', statistics.summary.totalUpdates],
+                    ['Soportes', statistics.summary.supportUpdates],
+                    ['Deploys', statistics.summary.deploys],
+                    ['Horas', statistics.summary.totalHours],
+                  ].map(([label, value]) => (
+                    <div key={String(label)} className="bg-white border border-gray-150 rounded-2xl p-4 shadow-sm">
+                      <span className="block text-[9px] uppercase font-black text-slate-400">{label}</span>
+                      <strong className="text-xl font-black font-mono text-slate-900">{value}</strong>
+                    </div>
+                  ))}
+                </div>
+
+                {statistics.summary.totalProjects === 0 && statistics.summary.totalUpdates === 0 ? (
+                  <div className="bg-white border border-dashed border-slate-300 rounded-2xl p-10 text-center text-sm text-slate-500">No hay datos para los filtros seleccionados.</div>
+                ) : (
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                    {[
+                      ['Por empleado', statistics.byEmployee, ['employeeName', 'assignedProjects', 'updates', 'supportUpdates', 'hours']],
+                      ['Por proyecto', statistics.byProject.map((row) => ({ ...row, status: projectStatusLabel(row.status), difficulty: difficultyLabel(row.difficulty) })), ['projectName', 'status', 'updates', 'supportUpdates', 'hours']],
+                      ['Por tipo de actividad', statistics.byActivityType.map((row) => ({ ...row, label: activityLabels[row.activityType] || row.label })), ['label', 'count', 'hours']],
+                      ['Por modalidad', (statistics.byWorkMode || []).map((row) => ({ ...row, mode: { ONSITE: 'Presencial', REMOTE: 'Remoto', MIXED: 'Mixto', LICENSE: 'Licencia' }[row.mode] || row.mode })), ['mode', 'count', 'hours']],
+                      ['Por mes', statistics.byMonth, ['month', 'updates', 'supports', 'deploys', 'hours']],
+                      ['Por estado', statistics.byStatus.map((row) => ({ ...row, status: projectStatusLabel(row.status) })), ['status', 'count']],
+                      ['Por dificultad', statistics.byDifficulty.map((row) => ({ ...row, difficulty: difficultyLabel(row.difficulty) })), ['difficulty', 'count']],
+                    ].map(([title, rows, columns]) => (
+                      <div key={String(title)} className="bg-white border border-gray-150 rounded-2xl p-5 shadow-sm overflow-hidden">
+                        <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 mb-3">{String(title)}</h4>
+                        {Array.isArray(rows) && rows.length > 0 ? (
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="text-left text-[9px] uppercase text-slate-400 border-b">
+                                  {(columns as string[]).map((column) => <th key={column} className="py-2 pr-2">{statColumnLabel(column)}</th>)}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(rows as any[]).slice(0, 10).map((row, idx) => (
+                                  <tr key={idx} className="border-b border-slate-50">
+                                    {(columns as string[]).map((column) => <td key={column} className="py-2 pr-2 text-slate-700">{row[column] ?? '-'}</td>)}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-slate-400">Sin datos para estos filtros.</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
@@ -2104,7 +3168,7 @@ export default function AdminDashboard({
                       return (
                         <div className="bg-white p-3.5 rounded-xl border border-red-200/60 text-xs">
                           <span className="block text-[10px] font-extrabold text-red-800 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-                            🔄 Agente Designado por Rotación (Automático)
+                             Agente Designado por Rotación (Automático)
                           </span>
                           {activeNextAgent ? (
                             <div className="flex items-center gap-2.5 mt-1 bg-red-50/40 p-2.5 rounded-xl border border-red-105">
@@ -2296,7 +3360,7 @@ export default function AdminDashboard({
                   return (
                     <div className="mt-6 pt-6 border-t border-slate-150 space-y-3">
                       <h5 className="text-[11px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1">
-                        ➕ Agentes Disponibles Para Sumar
+                        Agentes disponibles para sumar
                       </h5>
                       <p className="text-[10px] text-gray-400 leading-normal">
                         Ingresantes, interinos o agentes que no pertenecen actualmente al plantel de guardia:
@@ -2409,7 +3473,7 @@ export default function AdminDashboard({
                           {/* Editable Password hidden and resetting enabled */}
                           <td className="py-4 px-4">
                             <div className="flex items-center gap-2">
-                              <span className="text-slate-400 font-semibold tracking-widest text-[10px]">••••••••</span>
+                              <span className="text-slate-400 font-semibold tracking-widest text-[10px]">********</span>
                               <button
                                 type="button"
                                 onClick={() => {
@@ -2619,139 +3683,150 @@ export default function AdminDashboard({
 
         {/* TAB 6: PROFILE - Administrador Self Profile (Mi Perfil) */}
         {adminTab === 'profile' && (
-          <div className="bg-white p-6 max-w-2xl mx-auto rounded-3xl border border-gray-150 shadow-md space-y-8 animate-fadeIn">
-            {/* Cabecera de Ficha de Perfil Personal */}
-            <div className="flex flex-col sm:flex-row items-center gap-5 pb-6 border-b border-gray-100">
-              <div className="relative shrink-0">
-                <img
-                  src={adminProfileAvatar || "https://api.dicebear.com/7.x/initials/svg?seed=Admin&backgroundColor=cbd5e1"}
-                  alt={currentAdmin.name}
-                  referrerPolicy="no-referrer"
-                  className="w-20 h-20 rounded-full object-cover border-4 border-slate-100 bg-slate-50 shadow-md"
-                />
-              </div>
-              <div className="text-center sm:text-left">
-                <h3 className="text-lg font-black text-slate-850">{currentAdmin.name}</h3>
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{currentAdmin.position || 'Prosecretario Administrativo'}</p>
-                <div className="mt-2 flex flex-wrap gap-1.5 justify-center sm:justify-start">
-                  <span className="bg-indigo-50 border border-indigo-200 text-[10px] font-bold text-indigo-700 px-2 py-0.5 rounded-md">
-                    Credencial de Dirección / Prosecretaría
-                  </span>
-                  <span className="bg-slate-50 border border-slate-200 text-[10px] font-bold text-slate-600 px-2 py-0.5 rounded-md">
-                    Sistemas & Sistemas PJN
-                  </span>
+          <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
+            <div className="bg-white border border-gray-150 rounded-2xl p-6 shadow-sm">
+              <div className="flex flex-col md:flex-row md:items-center gap-5 pb-6 border-b border-slate-100">
+                <div className="relative shrink-0">
+                  <img
+                    src={adminProfileAvatar || currentAdmin.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(currentAdmin.name)}&backgroundColor=cbd5e1`}
+                    alt={currentAdmin.name}
+                    referrerPolicy="no-referrer"
+                    className="w-24 h-24 rounded-2xl object-cover border-4 border-white bg-slate-50 shadow-md"
+                  />
+                  {onUpdateAvatar && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => document.getElementById('admin-avatar-upload-file')?.click()}
+                        className="absolute bottom-1 right-1 bg-indigo-600 text-white p-2 rounded-xl shadow hover:bg-indigo-700 transition-colors"
+                        title="Subir foto"
+                      >
+                        <Upload className="w-4 h-4" />
+                      </button>
+                      <input
+                        type="file"
+                        id="admin-avatar-upload-file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files.length > 0) {
+                            const file = e.target.files[0];
+                            Promise.resolve(onUpdateAvatar(currentAdmin.id, file))
+                              .then((saved) => {
+                                setAdminProfileAvatar((saved && saved.avatar) || currentAdmin.avatar || '');
+                                triggerAlert('success', 'Foto de perfil cambiada correctamente.');
+                              })
+                              .catch(() => triggerAlert('error', 'No se pudo cambiar la foto de perfil.'));
+                          }
+                        }}
+                      />
+                    </>
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-xl font-black text-slate-900">Mi Perfil</h3>
+                  <p className="text-sm font-bold text-slate-700 mt-1">{currentAdmin.name}</p>
+                  <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-bold">
+                    <span className="bg-indigo-50 border border-indigo-100 text-indigo-700 rounded px-2 py-1">Rol: Administrador</span>
+                    <span className="bg-slate-50 border border-slate-200 text-slate-700 rounded px-2 py-1">{currentAdmin.dependency || 'Sin dependencia'}</span>
+                    {currentAdmin.position && <span className="bg-emerald-50 border border-emerald-100 text-emerald-700 rounded px-2 py-1">{currentAdmin.position}</span>}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Formulario de Configuración Personal */}
-            <form onSubmit={handleSaveAdminSelfProfile} className="space-y-6">
-              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-150 flex flex-col gap-3.5">
-                <h4 className="text-xs font-extrabold text-slate-700 uppercase tracking-widest flex items-center gap-1.5 mb-1.5">
-                  <User className="w-4 h-4 text-slate-500" /> Información Oficial de Acceso
-                </h4>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <form onSubmit={handleSaveAdminSelfProfile} className="mt-6 space-y-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">CUIL de Acceso</label>
+                    <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Nombre y apellido</label>
+                    <input
+                      type="text"
+                      value={adminProfileName}
+                      onChange={(e) => setAdminProfileName(e.target.value)}
+                      className="w-full text-xs font-semibold border border-gray-300 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Email</label>
+                    <input
+                      type="email"
+                      value={adminProfileEmail}
+                      onChange={(e) => setAdminProfileEmail(e.target.value)}
+                      className="w-full text-xs font-semibold border border-gray-300 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-slate-900 font-mono"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">CUIL</label>
                     <input
                       type="text"
                       value={currentAdmin.cuil || ''}
                       disabled
-                      className="w-full text-xs font-mono font-bold bg-slate-100 cursor-not-allowed border border-gray-200 rounded-xl px-3 py-2 text-slate-500"
+                      className="w-full text-xs font-mono font-bold bg-slate-100 cursor-not-allowed border border-gray-200 rounded-xl px-3 py-2.5 text-slate-500"
                     />
-                    <p className="text-[9px] text-gray-400 mt-1 italic">Vínculo institucional permanente, inalterable.</p>
                   </div>
-
                   <div>
-                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Dependencia Oficial</label>
+                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Dependencia / Área</label>
                     <input
                       type="text"
                       value={currentAdmin.dependency || ''}
                       disabled
-                      className="w-full text-xs font-semibold bg-slate-100 cursor-not-allowed border border-gray-200 rounded-xl px-3 py-2 text-slate-500"
+                      className="w-full text-xs font-semibold bg-slate-100 cursor-not-allowed border border-gray-200 rounded-xl px-3 py-2.5 text-slate-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Rol</label>
+                    <input
+                      type="text"
+                      value="Administrador"
+                      disabled
+                      className="w-full text-xs font-semibold bg-slate-100 cursor-not-allowed border border-gray-200 rounded-xl px-3 py-2.5 text-slate-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1 flex items-center gap-1.5">
+                      <Key className="w-3.5 h-3.5 text-amber-500" /> Nueva contraseña
+                    </label>
+                    <input
+                      type="password"
+                      value={adminProfilePassword}
+                      onChange={(e) => setAdminProfilePassword(e.target.value)}
+                      placeholder="Completar solo si querés cambiarla"
+                      className="w-full text-xs font-semibold border border-gray-300 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-slate-900"
                     />
                   </div>
                 </div>
-              </div>
-
-              <div className="space-y-4">
-                <h4 className="text-xs font-extrabold text-slate-700 uppercase tracking-widest flex items-center gap-1.5 border-b pb-1">
-                  <Settings className="w-3.5 h-3.5 text-indigo-500" /> Edición de Datos Personales o Clave
-                </h4>
 
                 <div>
-                  <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Nombre Completo</label>
-                  <input
-                    type="text"
-                    value={adminProfileName}
-                    onChange={(e) => setAdminProfileName(e.target.value)}
-                    className="w-full text-xs font-semibold border border-gray-300 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Correo Electrónico Institucional</label>
-                  <input
-                    type="email"
-                    value={adminProfileEmail}
-                    onChange={(e) => setAdminProfileEmail(e.target.value)}
-                    className="w-full text-xs font-semibold border border-gray-300 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent font-mono"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1 flex items-center gap-1.5">
-                    <Key className="w-3.5 h-3.5 text-amber-505" /> Contraseña de Dirección
-                  </label>
-                  <input
-                    type="text"
-                    value={adminProfilePassword}
-                    onChange={(e) => setAdminProfilePassword(e.target.value)}
-                    placeholder="Escribí tu nueva contraseña administrativa segura"
-                    className="w-full text-xs font-semibold border border-amber-300 rounded-xl px-3.5 py-2.5 bg-amber-50/15 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent font-mono text-slate-800"
-                    required
-                  />
-                  <p className="text-[10px] text-amber-800/80 mt-1 leading-normal">
-                    * Modifica este campo para reestablecer o personalizar tu clave de acceso de Dirección de forma directa.
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Foto de Perfil (Dirección Web URL)</label>
-                  <input
-                    type="url"
-                    value={adminProfileAvatar}
-                    onChange={(e) => setAdminProfileAvatar(e.target.value)}
-                    placeholder="Pegar dirección URL de la imagen en internet (ej: https://unsplash.com/...)"
-                    className="w-full text-xs font-mono border border-gray-300 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-indigo-700"
-                  />
-                  <div className="flex justify-between items-center mt-2">
-                    <p className="text-[9px] text-gray-400">
-                      Podés usar URLs de Unsplash o cualquier servicio de imágenes público para configurar tu foto.
-                    </p>
+                  <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Foto de perfil por URL</label>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="url"
+                      value={adminProfileAvatar}
+                      onChange={(e) => setAdminProfileAvatar(e.target.value)}
+                      placeholder="https://..."
+                      className="flex-1 text-xs font-mono border border-gray-300 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-indigo-700"
+                    />
                     <button
                       type="button"
                       onClick={() => setAdminProfileAvatar(`https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(adminProfileName)}&backgroundColor=cbd5e1`)}
-                      className="text-[10px] text-indigo-600 hover:text-indigo-800 hover:underline font-bold"
+                      className="text-xs font-bold border border-indigo-100 bg-indigo-50 text-indigo-700 rounded-xl px-3 py-2 hover:bg-indigo-100"
                     >
-                      Generar Iniciales Oficiales
+                      Generar iniciales
                     </button>
                   </div>
                 </div>
-              </div>
 
-              <div className="pt-4 border-t border-slate-100 flex justify-end">
-                <button
-                  type="submit"
-                  className="px-6 py-3 cursor-pointer bg-slate-950 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-2"
-                >
-                  <Check className="w-4 h-4 text-emerald-400" /> Guardar Cambios de Mi Perfil
-                </button>
-              </div>
-            </form>
+                <div className="pt-4 border-t border-slate-100 flex justify-end">
+                  <button
+                    type="submit"
+                    className="px-6 py-3 cursor-pointer bg-slate-950 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-2"
+                  >
+                    <Check className="w-4 h-4 text-emerald-400" /> Guardar cambios
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         )}
       </div>

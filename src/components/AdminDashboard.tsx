@@ -10,6 +10,7 @@ import {
 import ProjectComments from './ProjectComments';
 import { Pagination, usePagination } from './Pagination';
 import DependencyAdmin from './DependencyAdmin';
+import AdminV2Panel from './AdminV2Panel';
 
 interface AdminDashboardProps {
   employees: Employee[];
@@ -90,7 +91,7 @@ export default function AdminDashboard({
   remindedEmpIds,
   setRemindedEmpIds,
 }: AdminDashboardProps) {
-  const [adminTab, setAdminTab] = useState<'employees' | 'attendance' | 'projects' | 'statistics' | 'strikes' | 'settings' | 'dependencies' | 'profile'>('employees');
+  const [adminTab, setAdminTab] = useState<'v2' | 'employees' | 'attendance' | 'projects' | 'statistics' | 'strikes' | 'settings' | 'dependencies' | 'profile'>('v2');
 
   const todayStr = new Date().toISOString().split('T')[0];
   const nonAdminEmployees = employees.filter(e => !e.isAdmin);
@@ -1006,6 +1007,7 @@ export default function AdminDashboard({
 
       {/* Admin Tabs */}
       <div className="flex flex-wrap border-b border-gray-200 mb-8 gap-x-2 gap-y-1">
+        <button onClick={() => setAdminTab('v2')} className={`px-5 py-3 font-semibold text-sm border-b-2 flex items-center gap-2 ${adminTab === 'v2' ? 'border-red-600 text-red-600 font-bold' : 'border-transparent text-gray-500 hover:text-gray-900'}`}><BarChart3 className="h-4 w-4" /> Panel ejecutivo</button>
         <button
           onClick={() => setAdminTab('employees')}
           className={`px-5 py-3 font-semibold text-sm border-b-2 flex items-center gap-2 whitespace-nowrap transition-all duration-200 ${
@@ -1096,6 +1098,7 @@ export default function AdminDashboard({
 
       {/* Main Admin Contents */}
       <div className="grid grid-cols-1 gap-8">
+        {adminTab === 'v2' && <AdminV2Panel />}
         {/* TAB 1: EMPLEADOS - List and Detail split */}
         {adminTab === 'employees' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">

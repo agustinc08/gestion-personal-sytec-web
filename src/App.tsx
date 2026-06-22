@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useMemo, useState } from 'react';
-import { Briefcase, LogOut, RefreshCw, User } from 'lucide-react';
+import { Briefcase, CircleHelp, LogOut, RefreshCw, User } from 'lucide-react';
 import { employeesApi } from './api/employees.api';
 import { licensesApi } from './api/licenses.api';
 import { licenseArticlesApi } from './api/licenseArticles.api';
@@ -12,6 +12,8 @@ import AdminDashboard from './components/AdminDashboard';
 import EmployeeDashboard from './components/EmployeeDashboard';
 import LoginScreen from './components/LoginScreen';
 import NotificationBell from './components/NotificationBell';
+import GlobalSearch from './components/GlobalSearch';
+import HelpPanel from './components/HelpPanel';
 import { DEPENDENCIES, INITIAL_STRIKE_CONFIG, LAWS_ARTICLES_RULES } from './data/mockData';
 import { Dependency, Employee, LicenseArticle, LicenseRequest, LicenseRule, Project, ProjectUpdate, StrikeConfig, WorkLog } from './types';
 
@@ -51,6 +53,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [initialFetchDone, setInitialFetchDone] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const refreshData = async (user = currentUser) => {
     if (!user) return;
@@ -361,7 +364,9 @@ export default function App() {
               <p className="text-[10px] text-slate-400 mt-0.5 sm:mt-0">CUIL de Acceso: <span className="font-mono">{currentEmployee.cuil}</span> | Dependencia: {currentEmployee.dependency}</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <GlobalSearch />
+            <button type="button" onClick={() => setHelpOpen(true)} className="rounded-xl border border-slate-700 bg-slate-800 p-2.5" title="Ayuda"><CircleHelp className="h-4 w-4" /></button>
             <NotificationBell refreshKey={currentUser?.id} />
             <button onClick={handleLogout} className="px-4 py-2 bg-slate-800 hover:bg-rose-700 hover:text-white text-slate-100 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-sm border border-slate-700">
               <LogOut className="w-4 h-4" /> Cerrar sesión
@@ -453,6 +458,7 @@ export default function App() {
         <p>2026 Poder Judicial de la Nación - Secretaría de Informática - Oficina de Sistemas y Tecnología (SyTec).</p>
         <p className="text-[10px] text-gray-300 mt-1">Persistencia PostgreSQL mediante API NestJS.</p>
       </footer>
+      {helpOpen && <HelpPanel onClose={() => setHelpOpen(false)} />}
     </div>
   );
 }

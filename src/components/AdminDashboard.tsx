@@ -11,6 +11,7 @@ import ProjectComments from './ProjectComments';
 import { Pagination, usePagination } from './Pagination';
 import DependencyAdmin from './DependencyAdmin';
 import AdminV2Panel from './AdminV2Panel';
+import AnnouncementAdmin from './AnnouncementAdmin';
 
 interface AdminDashboardProps {
   employees: Employee[];
@@ -42,6 +43,7 @@ interface AdminDashboardProps {
   onDeleteLicenseRequest: (id: string) => Promise<void> | void;
   onClearLicenses?: () => Promise<void> | void;
   onResetGuardias?: (id: string) => Promise<Employee> | void;
+  onAdjustCompensatoryDays?: (id: string, days: number) => Promise<Employee> | void;
   onCreateLicenseArticle?: (payload: Partial<LicenseArticle>) => Promise<LicenseArticle> | void;
   onUpdateLicenseArticle?: (id: string, payload: Partial<LicenseArticle>) => Promise<LicenseArticle> | void;
   onUploadLicenseTemplate?: (id: string, file: File) => Promise<LicenseArticle> | void;
@@ -82,6 +84,7 @@ export default function AdminDashboard({
   onDeleteLicenseRequest,
   onClearLicenses,
   onResetGuardias,
+  onAdjustCompensatoryDays,
   onCreateLicenseArticle,
   onUpdateLicenseArticle,
   onUploadLicenseTemplate,
@@ -91,7 +94,7 @@ export default function AdminDashboard({
   remindedEmpIds,
   setRemindedEmpIds,
 }: AdminDashboardProps) {
-  const [adminTab, setAdminTab] = useState<'v2' | 'employees' | 'attendance' | 'projects' | 'statistics' | 'strikes' | 'settings' | 'dependencies' | 'profile'>('v2');
+  const [adminTab, setAdminTab] = useState<'v2' | 'announcements' | 'employees' | 'attendance' | 'projects' | 'statistics' | 'strikes' | 'settings' | 'dependencies' | 'profile'>('v2');
 
   const todayStr = new Date().toISOString().split('T')[0];
   const nonAdminEmployees = employees.filter(e => !e.isAdmin);
@@ -465,7 +468,7 @@ export default function AdminDashboard({
 
   // Calculations helper for employee remaining license days
   const getRemainingDays = (emp: Employee) => {
-    return (emp.totalLicenseDays + emp.guardiasDone) - emp.licenseDaysTaken;
+    return emp.totalLicenseDays - emp.licenseDaysTaken;
   };
 
   // Detail panel for a selected employee
@@ -1008,6 +1011,7 @@ export default function AdminDashboard({
       {/* Admin Tabs */}
       <div className="flex flex-wrap border-b border-gray-200 mb-8 gap-x-2 gap-y-1">
         <button onClick={() => setAdminTab('v2')} className={`px-5 py-3 font-semibold text-sm border-b-2 flex items-center gap-2 ${adminTab === 'v2' ? 'border-red-600 text-red-600 font-bold' : 'border-transparent text-gray-500 hover:text-gray-900'}`}><BarChart3 className="h-4 w-4" /> Panel ejecutivo</button>
+        <button onClick={() => setAdminTab('announcements')} className={`px-5 py-3 font-semibold text-sm border-b-2 flex items-center gap-2 ${adminTab === 'announcements' ? 'border-red-600 text-red-600 font-bold' : 'border-transparent text-gray-500 hover:text-gray-900'}`}><MessageSquare className="h-4 w-4" /> Comunicados</button>
         <button
           onClick={() => setAdminTab('employees')}
           className={`px-5 py-3 font-semibold text-sm border-b-2 flex items-center gap-2 whitespace-nowrap transition-all duration-200 ${
@@ -1099,6 +1103,7 @@ export default function AdminDashboard({
       {/* Main Admin Contents */}
       <div className="grid grid-cols-1 gap-8">
         {adminTab === 'v2' && <AdminV2Panel />}
+        {adminTab === 'announcements' && <AnnouncementAdmin employees={employees} dependencies={dependencies} />}
         {/* TAB 1: EMPLEADOS - List and Detail split */}
         {adminTab === 'employees' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -1151,8 +1156,8 @@ export default function AdminDashboard({
                           <strong className="text-gray-800 font-mono font-bold text-xs">{remaining} días</strong>
                         </div>
                         <div className="bg-slate-50 p-1.5 rounded-lg">
-                          <span className="block text-[9px] uppercase font-bold text-slate-400">Guardias</span>
-                          <strong className="text-indigo-600 font-mono font-bold text-xs">{emp.guardiasDone} d</strong>
+                          <span className="block text-[9px] uppercase font-bold text-slate-400">Compensatorios</span>
+                          <strong className="text-indigo-600 font-bold text-xs">{emp.guardiasDone ? `${emp.guardiasDone} días` : 'Sin saldo'}</strong>
                         </div>
                       </div>
                     </div>
@@ -1374,28 +1379,30 @@ export default function AdminDashboard({
                       {/* General specs */}
                       <div className="grid grid-cols-3 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-100 text-center">
                         <div>
-                          <span className="text-[9px] uppercase text-gray-400 font-bold block">Acumulados (Guardias +)</span>
-                          <span className="text-md font-bold font-mono text-indigo-600">+{selectedEmp.guardiasDone}d</span>
-                          {onResetGuardias && selectedEmp.guardiasDone > 0 && (
+                          <span className="text-[9px] uppercase text-gray-400 font-bold block">Días compensatorios por guardia</span>
+                          <span className="text-md font-bold text-indigo-600">{selectedEmp.guardiasDone > 0 ? `Saldo actual: ${selectedEmp.guardiasDone} días` : 'Sin días compensatorios acumulados'}</span>
+                          {onAdjustCompensatoryDays && (
                             <button
                               type="button"
                               onClick={() => {
-                                Promise.resolve(onResetGuardias(selectedEmp.id))
-                                  .then(() => triggerAlert('success', 'Guardias reseteadas a 0.'))
-                                  .catch(() => triggerAlert('error', 'No se pudieron resetear las guardias.'));
+                                const value = window.prompt('Saldo compensatorio del agente:', String(selectedEmp.guardiasDone));
+                                if (value === null) return; const days = Number(value);
+                                if (!Number.isInteger(days) || days < 0) { triggerAlert('error', 'Ingresá una cantidad válida de días.'); return; }
+                                if (!window.confirm('¿Seguro que querés ajustar los días compensatorios de este agente? Esta acción quedará registrada en auditoría.')) return;
+                                Promise.resolve(onAdjustCompensatoryDays(selectedEmp.id, days)).then(() => triggerAlert('success', 'Saldo compensatorio actualizado.')).catch(() => triggerAlert('error', 'No se pudo ajustar el saldo.'));
                               }}
                               className="mt-1 text-[9px] font-bold text-indigo-700 hover:text-indigo-900 underline"
                             >
-                              Resetear a 0
+                              Ajustar saldo
                             </button>
                           )}
                         </div>
                         <div>
-                          <span className="text-[9px] uppercase text-gray-400 font-bold block">Tomados (Compensatorios -)</span>
+                          <span className="text-[9px] uppercase text-gray-400 font-bold block">Días de licencia tomados</span>
                           <span className="text-md font-bold font-mono text-amber-600">-{selectedEmp.licenseDaysTaken}d</span>
                         </div>
                         <div>
-                          <span className="text-[9px] uppercase text-gray-400 font-bold block">Saldo Neto</span>
+                          <span className="text-[9px] uppercase text-gray-400 font-bold block">Saldo de licencia</span>
                           <span className="text-md font-bold font-mono text-emerald-600">{getRemainingDays(selectedEmp)}d</span>
                         </div>
                       </div>

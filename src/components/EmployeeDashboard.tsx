@@ -367,7 +367,7 @@ export default function EmployeeDashboard({
   // Días tomados: employee.licenseDaysTaken
   // Días de guardia acumulados que compensan días: employee.guardiasDone
   // Días restantes a tomar: (employee.totalLicenseDays + employee.guardiasDone) - employee.licenseDaysTaken
-  const remainingDaysToTake = (employee.totalLicenseDays + employee.guardiasDone) - employee.licenseDaysTaken;
+  const remainingDaysToTake = employee.totalLicenseDays - employee.licenseDaysTaken;
 
   const todayStr = new Date().toISOString().split('T')[0];
   const hasLogToday = workLogs.some(log => log.employeeId === employee.id && log.date === todayStr);
@@ -1641,16 +1641,15 @@ export default function EmployeeDashboard({
                   </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="bg-white p-3.5 rounded-2xl border border-indigo-100 shadow-xs">
-                      <span className="block text-[11px] uppercase tracking-wider text-indigo-600 font-bold pb-2 border-b">Guardias en Feria</span>
+                      <span className="block text-[11px] uppercase tracking-wider text-indigo-600 font-bold pb-2 border-b">Días compensatorios por guardia</span>
                       <div className="flex items-baseline gap-1 mt-2">
-                        <span className="text-2xl font-extrabold text-indigo-600 font-mono">+{employee.guardiasDone}</span>
-                        <span className="text-[10px] text-indigo-400 font-bold">d</span>
+                        <span className="text-lg font-extrabold text-indigo-600">{employee.guardiasDone > 0 ? `${employee.guardiasDone} días disponibles` : 'Sin días compensatorios acumulados'}</span>
                       </div>
-                      <p className="text-[9px] text-indigo-450 mt-1">Suman compensatorios.</p>
+                      <p className="text-[9px] text-indigo-450 mt-1">Saldo independiente de las licencias comunes.</p>
                     </div>
 
                     <div className="bg-white p-3.5 rounded-2xl border border-gray-150 shadow-xs">
-                      <span className="block text-[11px] uppercase tracking-wider text-amber-700 font-bold pb-2 border-b">Licencias Tomadas</span>
+                      <span className="block text-[11px] uppercase tracking-wider text-amber-700 font-bold pb-2 border-b">Días de licencia tomados</span>
                       <div className="flex items-baseline gap-1 mt-2">
                         <span className="text-2xl font-extrabold text-amber-600 font-mono">-{employee.licenseDaysTaken}</span>
                         <span className="text-[10px] text-amber-500 font-bold">d</span>
@@ -1659,7 +1658,7 @@ export default function EmployeeDashboard({
                     </div>
 
                     <div className="bg-white p-3.5 rounded-2xl border-emerald-250 shadow-xs ring-2 ring-emerald-50 bg-emerald-50/15">
-                      <span className="block text-[11px] uppercase tracking-wider text-emerald-800 font-extrabold pb-2 border-b">Saldo Disponible</span>
+                      <span className="block text-[11px] uppercase tracking-wider text-emerald-800 font-extrabold pb-2 border-b">Saldo de licencia común</span>
                       <div className="flex items-baseline gap-1 mt-2">
                         <span className="text-2xl font-black text-emerald-600 font-mono">{remainingDaysToTake}</span>
                         <span className="text-[10px] text-emerald-550 font-extrabold">d</span>

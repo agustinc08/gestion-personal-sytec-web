@@ -212,6 +212,16 @@ export interface Notification {
   createdAt: string;
 }
 
+export interface Announcement {
+  id: string; title: string; message: string;
+  type: 'GENERAL' | 'STRIKE' | 'SALARY' | 'LICENSE' | 'PROJECT' | 'SYSTEM';
+  priority: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
+  targetRole?: 'ADMIN' | 'EMPLOYEE'; targetDependencyId?: string; targetEmployeeId?: string;
+  startsAt?: string; endsAt?: string; pinned: boolean; isActive: boolean;
+  readAt?: string; createdAt: string; updatedAt: string;
+  targetDependency?: Dependency; targetEmployee?: Employee;
+}
+
 export interface ProjectComment {
   id: string;
   projectId: string;

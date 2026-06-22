@@ -23,5 +23,6 @@ export const employeesApi = {
     return normalizeEmployee((await api.post<Employee>('/employees/me/avatar', formData, { headers: { 'Content-Type': 'multipart/form-data' } })).data);
   },
   resetGuardias: async (id: string) => normalizeEmployee((await api.post<Employee>(`/employees/${id}/reset-guardias`)).data),
+  adjustCompensatoryDays: async (id: string, days: number) => normalizeEmployee((await api.patch<Employee>(`/employees/${id}/compensatory-days`, { days })).data),
   remove: async (id: string) => (await api.delete(`/employees/${id}`)).data,
 };

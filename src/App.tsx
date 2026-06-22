@@ -7,6 +7,7 @@ import { projectsApi } from './api/projects.api';
 import { strikeApi } from './api/strike.api';
 import { worklogsApi } from './api/worklogs.api';
 import { authApi } from './api/auth.api';
+import { announcementsApi } from './api/announcements.api';
 import { dependenciesApi } from './api/dependencies.api';
 import AdminDashboard from './components/AdminDashboard';
 import EmployeeDashboard from './components/EmployeeDashboard';
@@ -14,8 +15,9 @@ import LoginScreen from './components/LoginScreen';
 import NotificationBell from './components/NotificationBell';
 import GlobalSearch from './components/GlobalSearch';
 import HelpPanel from './components/HelpPanel';
+import AnnouncementBanner from './components/AnnouncementBanner';
 import { DEPENDENCIES, INITIAL_STRIKE_CONFIG, LAWS_ARTICLES_RULES } from './data/mockData';
-import { Dependency, Employee, LicenseArticle, LicenseRequest, LicenseRule, Project, ProjectUpdate, StrikeConfig, WorkLog } from './types';
+import { Announcement, Dependency, Employee, LicenseArticle, LicenseRequest, LicenseRule, Project, ProjectUpdate, StrikeConfig, WorkLog } from './types';
 
 function SessionAvatar({ src, name }: { src?: string; name: string }) {
   const [imageFailed, setImageFailed] = useState(false);
@@ -54,11 +56,12 @@ export default function App() {
   const [initialFetchDone, setInitialFetchDone] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
 
   const refreshData = async (user = currentUser) => {
     if (!user) return;
     const isAdmin = user.role === 'ADMIN';
-    const [employeeRows, projectRows, licenseRows, workLogRows, rules, articleRows, strike, dependencyRows] = await Promise.all([
+    const [employeeRows, projectRows, licenseRows, workLogRows, rules, articleRows, strike, dependencyRows, announcementRows] = await Promise.all([
       isAdmin ? employeesApi.all() : employeesApi.me().then((me) => [me]),
       isAdmin ? projectsApi.all() : projectsApi.my(),
       isAdmin ? licensesApi.all() : licensesApi.my(),
@@ -67,6 +70,7 @@ export default function App() {
       licensesApi.rules().then(() => licenseArticlesApi.all(isAdmin)).catch(() => []),
       strikeApi.config(),
       isAdmin ? dependenciesApi.all() : Promise.resolve([]),
+      announcementsApi.active().catch(() => []),
     ]);
     setEmployees(employeeRows);
     setProjects(projectRows);
@@ -76,6 +80,7 @@ export default function App() {
     setLicenseArticles(articleRows);
     setStrikeConfig(strike);
     if (isAdmin) setDependencies(dependencyRows);
+    setAnnouncements(announcementRows);
   };
 
   useEffect(() => {
@@ -95,16 +100,14 @@ export default function App() {
 
   const processedEmployees = useMemo(() => {
     return employees.map((emp) => {
-      let guardias = 0;
       let taken = 0;
       licenseRequests.forEach((req) => {
         if (req.employeeId === emp.id && req.status === 'aprobado') {
           const days = Math.max(1, Math.round((+new Date(req.endDate) - +new Date(req.startDate)) / 86400000) + 1);
-          if (req.article === 'Guardia en Feria') guardias += days;
           if (req.article === 'Art. 14') taken += days;
         }
       });
-      return { ...emp, guardiasDone: guardias, licenseDaysTaken: taken, totalLicenseDays: emp.totalLicenseDays || 0 };
+      return { ...emp, guardiasDone: emp.guardiasDone || 0, licenseDaysTaken: taken, totalLicenseDays: emp.totalLicenseDays || 0 };
     });
   }, [employees, licenseRequests]);
 
@@ -300,6 +303,11 @@ export default function App() {
     await refreshData();
     return saved;
   };
+  const handleAdjustCompensatoryDays = async (employeeId: string, days: number) => {
+    const saved = await employeesApi.adjustCompensatoryDays(employeeId, days);
+    setEmployees((prev) => prev.map((item) => item.id === saved.id ? saved : item));
+    return saved;
+  };
 
   const handleUpdateStrikeConfig = async (newConfig: StrikeConfig) => {
     const saved = await strikeApi.updateConfig(newConfig);
@@ -392,6 +400,7 @@ export default function App() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 md:px-8 py-8 flex-1 w-full">
+        <AnnouncementBanner items={announcements} onRefresh={() => announcementsApi.active().then(setAnnouncements)} />
         {currentRole === 'admin' ? (
           <AdminDashboard
             employees={processedEmployees}
@@ -423,6 +432,7 @@ export default function App() {
             onDeleteLicenseRequest={handleDeleteLicenseRequest}
             onClearLicenses={handleClearLicenses}
             onResetGuardias={handleResetGuardias}
+            onAdjustCompensatoryDays={handleAdjustCompensatoryDays}
             onCreateLicenseArticle={handleCreateLicenseArticle}
             onUpdateLicenseArticle={handleUpdateLicenseArticle}
             onUploadLicenseTemplate={handleUploadLicenseTemplate}

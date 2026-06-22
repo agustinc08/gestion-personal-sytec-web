@@ -16,6 +16,7 @@ import NotificationBell from './components/NotificationBell';
 import GlobalSearch from './components/GlobalSearch';
 import HelpPanel from './components/HelpPanel';
 import AnnouncementBanner from './components/AnnouncementBanner';
+import { APP_NAME, APP_UPDATED_AT, APP_VERSION } from './config/app';
 import { DEPENDENCIES, INITIAL_STRIKE_CONFIG, LAWS_ARTICLES_RULES } from './data/mockData';
 import { Announcement, Dependency, Employee, LicenseArticle, LicenseRequest, LicenseRule, Project, ProjectUpdate, StrikeConfig, WorkLog } from './types';
 
@@ -466,6 +467,7 @@ export default function App() {
       </main>
       <footer className="text-center text-xs text-gray-400 mt-12 py-6 border-t font-mono">
         <p>2026 Poder Judicial de la Nación - Secretaría de Informática - Oficina de Sistemas y Tecnología (SyTec).</p>
+        <p className="mt-1 font-bold text-slate-500">{APP_NAME} {APP_VERSION} · Última actualización: {APP_UPDATED_AT}</p>
         <p className="text-[10px] text-gray-300 mt-1">Persistencia PostgreSQL mediante API NestJS.</p>
       </footer>
       {helpOpen && <HelpPanel onClose={() => setHelpOpen(false)} />}

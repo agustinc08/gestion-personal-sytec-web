@@ -49,7 +49,35 @@ export default function EmployeeDashboard({
   onChangePassword,
   remindedEmpIds = [],
 }: EmployeeDashboardProps) {
-  const [activeTab, setActiveTab] = useState<'carga_diaria' | 'proyectos' | 'statistics' | 'licencias' | 'perfil'>('carga_diaria');
+  const initialActiveTab = () => {
+    const section = new URLSearchParams(window.location.search).get('seccion');
+    const map: Record<string, 'carga_diaria' | 'proyectos' | 'statistics' | 'licencias' | 'perfil'> = {
+      'parte-diario': 'carga_diaria',
+      proyectos: 'proyectos',
+      estadisticas: 'statistics',
+      licencias: 'licencias',
+      perfil: 'perfil',
+      empleados: 'perfil',
+    };
+    return section && map[section] ? map[section] : 'carga_diaria';
+  };
+  const [activeTab, setActiveTab] = useState<'carga_diaria' | 'proyectos' | 'statistics' | 'licencias' | 'perfil'>(initialActiveTab);
+  useEffect(() => {
+    const onNavigate = (event: Event) => {
+      const section = (event as CustomEvent<{ section?: string }>).detail?.section;
+      const map: Record<string, typeof activeTab> = {
+        'parte-diario': 'carga_diaria',
+        proyectos: 'proyectos',
+        estadisticas: 'statistics',
+        licencias: 'licencias',
+        perfil: 'perfil',
+        empleados: 'perfil',
+      };
+      if (section && map[section]) setActiveTab(map[section]);
+    };
+    window.addEventListener('sytec:navigate', onNavigate);
+    return () => window.removeEventListener('sytec:navigate', onNavigate);
+  }, []);
 
   // Selected project state
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -118,8 +146,14 @@ export default function EmployeeDashboard({
 
   const saveProfile = async (event: React.FormEvent) => {
     event.preventDefault();
+    const fullName = `${profileFirstName} ${profileLastName}`.trim();
+    const email = profileEmail.trim();
+    if (!fullName || !email) {
+      triggerAlert('error', 'No se pudo actualizar el perfil');
+      return;
+    }
     try {
-      await Promise.resolve(onUpdateEmployee({ ...employee, name: `${profileFirstName} ${profileLastName}`.trim(), email: profileEmail.trim() }));
+      await Promise.resolve(onUpdateEmployee({ ...employee, name: fullName, email }));
       setProfileEditing(false); triggerAlert('success', 'Perfil actualizado correctamente');
     } catch { triggerAlert('error', 'No se pudo actualizar el perfil'); }
   };

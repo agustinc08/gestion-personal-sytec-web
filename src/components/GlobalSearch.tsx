@@ -11,6 +11,30 @@ const groupLabels: Record<string, string> = {
   comments: 'Comentarios',
 };
 
+type SearchResult = {
+  title: string;
+  subtitle?: string;
+  link?: string;
+  section?: string;
+  entityId?: string;
+};
+
+const appBasePath = () => {
+  const configured = import.meta.env.VITE_BASE_PATH || import.meta.env.BASE_URL || '/';
+  if (configured && configured !== '/') return configured.endsWith('/') ? configured : `${configured}/`;
+  const firstPathSegment = window.location.pathname.split('/').filter(Boolean)[0];
+  return firstPathSegment ? `/${firstPathSegment}/` : '/';
+};
+
+const navigationTarget = (row: SearchResult) => {
+  const params = new URLSearchParams(row.link?.startsWith('?') ? row.link.slice(1) : '');
+  const section = row.section || params.get('seccion') || 'perfil';
+  const entityId = row.entityId || params.get('proyecto') || undefined;
+  params.set('seccion', section);
+  if (entityId && section === 'proyectos') params.set('proyecto', entityId);
+  return { section, entityId, href: `${appBasePath()}?${params.toString()}` };
+};
+
 export default function GlobalSearch() {
   const [q, setQ] = useState('');
   const [data, setData] = useState<Record<string, any[]>>({});
@@ -36,6 +60,14 @@ export default function GlobalSearch() {
 
   const groups = useMemo(() => Object.entries(data).filter(([, rows]) => rows?.length), [data]);
 
+  const openResult = (event: React.MouseEvent<HTMLAnchorElement>, row: SearchResult) => {
+    event.preventDefault();
+    const target = navigationTarget(row);
+    window.history.pushState(null, '', target.href);
+    window.dispatchEvent(new CustomEvent('sytec:navigate', { detail: { section: target.section, entityId: target.entityId } }));
+    setQ('');
+  };
+
   return (
     <div className="relative w-full max-w-sm text-slate-900">
       <div className="flex items-center rounded-xl bg-white px-3 py-2">
@@ -49,7 +81,7 @@ export default function GlobalSearch() {
             <section key={group} className="mb-3">
               <h4 className="mb-1 text-[10px] font-black uppercase text-slate-400">{groupLabels[group] || group}</h4>
               {rows.map((row, index) => (
-                <a key={`${group}-${index}`} href={row.link} onClick={() => setQ('')} className="block rounded-xl p-2 hover:bg-slate-50">
+                <a key={`${group}-${index}`} href={navigationTarget(row).href} onClick={(event) => openResult(event, row)} className="block rounded-xl p-2 hover:bg-slate-50">
                   <strong className="block text-xs">{row.title}</strong>
                   <span className="block truncate text-[10px] text-slate-500">{row.subtitle}</span>
                 </a>

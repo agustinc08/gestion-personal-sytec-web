@@ -123,10 +123,19 @@ export default function App() {
   };
 
   const handleUpdateEmployee = async (updatedEmp: Employee) => {
+    const selfProfilePayload = {
+      name: updatedEmp.name,
+      email: updatedEmp.email,
+      avatar: updatedEmp.avatar,
+      password: updatedEmp.password,
+    };
     const saved = updatedEmp.id === currentUser?.employeeId
-      ? await employeesApi.updateMe(updatedEmp)
+      ? await employeesApi.updateMe(selfProfilePayload)
       : await employeesApi.update(updatedEmp.id, updatedEmp);
     setEmployees((prev) => prev.map((emp) => (emp.id === saved.id ? saved : emp)));
+    if (saved.id === currentUser?.employeeId) {
+      setCurrentUser((prev: any) => prev ? { ...prev, email: saved.email } : prev);
+    }
     return saved;
   };
 

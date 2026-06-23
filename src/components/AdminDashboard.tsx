@@ -94,7 +94,37 @@ export default function AdminDashboard({
   remindedEmpIds,
   setRemindedEmpIds,
 }: AdminDashboardProps) {
-  const [adminTab, setAdminTab] = useState<'v2' | 'announcements' | 'employees' | 'attendance' | 'projects' | 'statistics' | 'strikes' | 'settings' | 'dependencies' | 'profile'>('v2');
+  const initialAdminTab = () => {
+    const section = new URLSearchParams(window.location.search).get('seccion');
+    const map: Record<string, 'v2' | 'announcements' | 'employees' | 'attendance' | 'projects' | 'statistics' | 'strikes' | 'settings' | 'dependencies' | 'profile'> = {
+      empleados: 'employees',
+      proyectos: 'projects',
+      licencias: 'attendance',
+      dependencias: 'dependencies',
+      'parte-diario': 'attendance',
+      estadisticas: 'statistics',
+      perfil: 'profile',
+    };
+    return section && map[section] ? map[section] : 'v2';
+  };
+  const [adminTab, setAdminTab] = useState<'v2' | 'announcements' | 'employees' | 'attendance' | 'projects' | 'statistics' | 'strikes' | 'settings' | 'dependencies' | 'profile'>(initialAdminTab);
+  useEffect(() => {
+    const onNavigate = (event: Event) => {
+      const section = (event as CustomEvent<{ section?: string }>).detail?.section;
+      const map: Record<string, typeof adminTab> = {
+        empleados: 'employees',
+        proyectos: 'projects',
+        licencias: 'attendance',
+        dependencias: 'dependencies',
+        'parte-diario': 'attendance',
+        estadisticas: 'statistics',
+        perfil: 'profile',
+      };
+      if (section && map[section]) setAdminTab(map[section]);
+    };
+    window.addEventListener('sytec:navigate', onNavigate);
+    return () => window.removeEventListener('sytec:navigate', onNavigate);
+  }, []);
 
   const todayStr = new Date().toISOString().split('T')[0];
   const nonAdminEmployees = employees.filter(e => !e.isAdmin);
@@ -839,9 +869,9 @@ export default function AdminDashboard({
         ...(adminProfilePassword.trim() ? { password: adminProfilePassword.trim() } : {}),
       }));
       setAdminProfilePassword('');
-      triggerAlert('success', 'Tus datos de perfil administrativo se actualizaron correctamente.');
+      triggerAlert('success', 'Perfil actualizado correctamente');
     } catch {
-      triggerAlert('error', 'No se pudo actualizar tu perfil.');
+      triggerAlert('error', 'No se pudo actualizar el perfil');
     }
   };
 

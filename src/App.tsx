@@ -1,4 +1,4 @@
-Ôªøimport React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Briefcase, CircleHelp, LogOut, RefreshCw, User } from 'lucide-react';
 import { employeesApi } from './api/employees.api';
 import { licensesApi } from './api/licenses.api';
@@ -123,15 +123,18 @@ export default function App() {
   };
 
   const handleUpdateEmployee = async (updatedEmp: Employee) => {
+    const password = updatedEmp.password?.trim();
     const selfProfilePayload = {
       name: updatedEmp.name,
       email: updatedEmp.email,
       avatar: updatedEmp.avatar,
-      password: updatedEmp.password,
+      ...(password ? { password } : {}),
     };
+    const employeePayload: Partial<Employee> = { ...updatedEmp };
+    delete employeePayload.password;
     const saved = updatedEmp.id === currentUser?.employeeId
       ? await employeesApi.updateMe(selfProfilePayload)
-      : await employeesApi.update(updatedEmp.id, updatedEmp);
+      : await employeesApi.update(updatedEmp.id, password ? { ...employeePayload, password } : employeePayload);
     setEmployees((prev) => prev.map((emp) => (emp.id === saved.id ? saved : emp)));
     if (saved.id === currentUser?.employeeId) {
       setCurrentUser((prev: any) => prev ? { ...prev, email: saved.email } : prev);
@@ -189,7 +192,7 @@ export default function App() {
     const payload = typeof update === 'string' ? { content: update } : update;
     const saved = await projectsApi.addUpdate(projectId, {
       ...payload,
-      authorName: currentUser?.role === 'ADMIN' ? 'Administraci√≥n' : currentEmployee?.name || 'Empleado',
+      authorName: currentUser?.role === 'ADMIN' ? 'AdministraciÛn' : currentEmployee?.name || 'Empleado',
     });
     setProjects((prev) => prev.map((p) => (p.id === saved.id ? saved : p)));
     return saved;
@@ -354,7 +357,7 @@ export default function App() {
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-10 max-w-sm w-full shadow-2xl flex flex-col items-center gap-6 animate-fade-in">
           <RefreshCw className="w-8 h-8 animate-spin text-rose-500" />
           <div>
-            <h1 className="text-sm font-black tracking-wider text-slate-300 uppercase mb-1">Conexi√≥n del Servidor</h1>
+            <h1 className="text-sm font-black tracking-wider text-slate-300 uppercase mb-1">ConexiÛn del Servidor</h1>
             <p className="text-xs text-slate-400">Sincronizando API y base de datos...</p>
           </div>
         </div>
@@ -374,9 +377,9 @@ export default function App() {
             <SessionAvatar src={currentEmployee.avatar} name={currentEmployee.name} />
             <div className="text-center sm:text-left">
               <h1 className="text-sm font-black tracking-tight flex flex-wrap items-center justify-center sm:justify-start gap-2">
-                Sesi√≥n iniciada: <span className="text-indigo-300 font-bold">{currentEmployee.name}</span>
+                SesiÛn iniciada: <span className="text-indigo-300 font-bold">{currentEmployee.name}</span>
                 <span className={`font-mono text-[9px] uppercase font-bold px-2 py-0.5 rounded border ${currentEmployee.isAdmin ? 'bg-red-500/25 border-red-500/30 text-rose-300' : 'bg-emerald-500/25 border-emerald-500/30 text-emerald-300'}`}>
-                  {currentEmployee.isAdmin ? 'Prosecretar√≠a Administrativa / Direcci√≥n' : `Agente: ${currentEmployee.position || 'Oficial'}`}
+                  {currentEmployee.isAdmin ? 'ProsecretarÌa Administrativa / DirecciÛn' : `Agente: ${currentEmployee.position || 'Oficial'}`}
                 </span>
               </h1>
               <p className="text-[10px] text-slate-400 mt-0.5 sm:mt-0">CUIL de Acceso: <span className="font-mono">{currentEmployee.cuil}</span> | Dependencia: {currentEmployee.dependency}</p>
@@ -387,7 +390,7 @@ export default function App() {
             <button type="button" onClick={() => setHelpOpen(true)} className="rounded-xl border border-slate-700 bg-slate-800 p-2.5" title="Ayuda"><CircleHelp className="h-4 w-4" /></button>
             <NotificationBell refreshKey={currentUser?.id} />
             <button onClick={handleLogout} className="px-4 py-2 bg-slate-800 hover:bg-rose-700 hover:text-white text-slate-100 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-sm border border-slate-700">
-              <LogOut className="w-4 h-4" /> Cerrar sesi√≥n
+              <LogOut className="w-4 h-4" /> Cerrar sesiÛn
             </button>
           </div>
         </div>
@@ -398,8 +401,8 @@ export default function App() {
           <div className="flex items-center gap-3">
             <div className="bg-slate-950 p-2.5 rounded-2xl text-white shadow-md"><Briefcase className="w-6 h-6" /></div>
             <div>
-              <h1 className="text-xl font-bold text-gray-900 tracking-tight">√Årea de Desarrollo</h1>
-              <span className="text-xs text-slate-500 font-medium font-sans">Poder Judicial de la Naci√≥n - Secretar√≠a de Inform√°tica - Oficina de Sistemas y Tecnolog√≠a (SyTec)</span>
+              <h1 className="text-xl font-bold text-gray-900 tracking-tight">¡rea de Desarrollo</h1>
+              <span className="text-xs text-slate-500 font-medium font-sans">Poder Judicial de la NaciÛn - SecretarÌa de Inform·tica - Oficina de Sistemas y TecnologÌa (SyTec)</span>
             </div>
           </div>
           <div className="px-3 py-1.5 rounded-lg flex items-center gap-2 border bg-emerald-50 text-emerald-700 border-emerald-200/80 font-semibold text-xs font-mono">
@@ -475,8 +478,8 @@ export default function App() {
         )}
       </main>
       <footer className="text-center text-xs text-gray-400 mt-12 py-6 border-t font-mono">
-        <p>2026 Poder Judicial de la Naci√≥n - Secretar√≠a de Inform√°tica - Oficina de Sistemas y Tecnolog√≠a (SyTec).</p>
-        <p className="mt-1 font-bold text-slate-500">{APP_NAME} {APP_VERSION} ¬∑ √öltima actualizaci√≥n: {APP_UPDATED_AT}</p>
+        <p>2026 Poder Judicial de la NaciÛn - SecretarÌa de Inform·tica - Oficina de Sistemas y TecnologÌa (SyTec).</p>
+        <p className="mt-1 font-bold text-slate-500">{APP_NAME} {APP_VERSION} ∑ ⁄ltima actualizaciÛn: {APP_UPDATED_AT}</p>
         <p className="text-[10px] text-gray-300 mt-1">Persistencia PostgreSQL mediante API NestJS.</p>
       </footer>
       {helpOpen && <HelpPanel onClose={() => setHelpOpen(false)} />}

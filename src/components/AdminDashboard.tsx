@@ -377,7 +377,7 @@ export default function AdminDashboard({
     setEditName(emp.name);
     setEditEmail(emp.email);
     setEditCuil(emp.cuil || '');
-    setEditPassword(emp.password || '');
+    setEditPassword('');
     setEditDependency(emp.dependencyId || '');
     setEditPosition(emp.position || '');
     setEditTotalLicenseDays(emp.totalLicenseDays);
@@ -390,12 +390,15 @@ export default function AdminDashboard({
     e.preventDefault();
     if (!selectedEmp) return;
     if (!editName.trim() || !editEmail.trim() || !editCuil.trim()) {
-      triggerAlert('error', 'Por favor, completá Nombre, Email y CUIL. La clave solo se completa si querés cambiarla.');
+      triggerAlert('error', 'Por favor, completá Nombre, Email y CUIL. La contraseña nueva es opcional.');
       return;
     }
 
+    const employeePayload: Employee = { ...selectedEmp };
+    delete (employeePayload as Partial<Employee>).password;
+
     onUpdateEmployee({
-      ...selectedEmp,
+      ...employeePayload,
       name: editName,
       email: editEmail,
       cuil: editCuil,
@@ -1291,14 +1294,13 @@ export default function AdminDashboard({
                           />
                         </div>
                         <div>
-                          <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1.5">Clave de Acceso</label>
+                          <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1.5">Contraseña nueva (opcional)</label>
                           <input
                             type="text"
                             value={editPassword}
                             onChange={(e) => setEditPassword(e.target.value)}
                             className="w-full text-xs font-semibold bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 focus:outline-none"
-                            required
-                          />
+                            placeholder="Completar solo si querés cambiar la contraseña del agente"/>
                         </div>
                       </div>
 

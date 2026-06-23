@@ -2,6 +2,19 @@ import React, { useEffect, useState } from 'react';
 import { Activity, Download, FileText, Gauge, Settings, ShieldCheck } from 'lucide-react';
 import { auditApi, dashboardV2Api, downloadExport, settingsApi } from '../api/v2.api';
 
+const appBasePath = () => {
+  const configured = import.meta.env.VITE_BASE_PATH || import.meta.env.BASE_URL || '/';
+  if (configured && configured !== '/') return configured.endsWith('/') ? configured : `${configured}/`;
+  const firstPathSegment = window.location.pathname.split('/').filter(Boolean)[0];
+  return firstPathSegment ? `/${firstPathSegment}/` : '/';
+};
+
+const openSection = (event: React.MouseEvent<HTMLAnchorElement>, section: string) => {
+  event.preventDefault();
+  window.history.pushState(null, '', `${appBasePath()}?seccion=${section}`);
+  window.dispatchEvent(new CustomEvent('sytec:navigate', { detail: { section } }));
+};
+
 const moduleLabels: Record<string, string> = { AUTH: 'Acceso', PROJECTS: 'Proyectos', LICENSES: 'Licencias', WORK_LOGS: 'Parte diario', EMPLOYEES: 'Empleados', DEPENDENCIES: 'Dependencias', SETTINGS: 'Configuración' };
 
 export default function AdminV2Panel() {
@@ -18,7 +31,7 @@ function ExecutiveSummary() {
   const cards = [
     ['Empleados activos', data.employeesActive, 'empleados'], ['Dependencias activas', data.dependenciesActive, 'dependencias'], ['Partes cargados hoy', data.workLogsToday, 'parte-diario'], ['Partes pendientes hoy', data.workLogsPendingToday, 'parte-diario'], ['Licencias pendientes', data.pendingLicenses, 'licencias'], ['Licencias aprobadas este mes', data.approvedLicensesMonth, 'licencias'], ['Proyectos activos', data.activeProjects, 'proyectos'], ['Proyectos vencidos', data.overdueProjects, 'proyectos'], ['Proyectos próximos', data.upcomingProjects, 'proyectos'],
   ];
-  return <div className="space-y-6"><section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">{cards.map(([label, value, link]) => <a key={label} href={`/?seccion=${link}`} className="rounded-2xl border bg-white p-4 shadow-sm hover:border-indigo-300"><span className="block text-[10px] font-black uppercase text-slate-400">{label}</span><strong className="mt-1 block text-2xl font-black">{value}</strong><span className="text-[10px] font-bold text-indigo-600">Ver detalle</span></a>)}</section><div className="grid gap-5 lg:grid-cols-3"><section className="rounded-2xl border bg-white p-5"><h3 className="font-bold">Próxima guardia / paro</h3>{data.nextStrikeDuty ? <p className="mt-3 text-sm">{new Date(data.nextStrikeDuty.date).toLocaleDateString('es-AR')}<span className="block text-xs text-slate-500">{data.nextStrikeDuty.notes || 'Sin observaciones'}</span></p> : <p className="mt-3 text-xs text-slate-400">Sin próxima guardia configurada.</p>}</section><section className="rounded-2xl border bg-white p-5"><h3 className="font-bold">Tecnologías más declaradas</h3><div className="mt-3 space-y-2">{data.technologies?.map((row: any) => <div key={row.name} className="flex justify-between rounded-lg bg-slate-50 px-3 py-2 text-xs"><span>{row.name}</span><b>{row.count}</b></div>)}{!data.technologies?.length && <p className="text-xs text-slate-400">Sin stacks declarados.</p>}</div></section><section className="rounded-2xl border bg-white p-5"><h3 className="font-bold">Auditoría reciente</h3><div className="mt-3 space-y-2">{data.recentAudit?.map((row: any) => <div key={row.id} className="border-b pb-2 text-xs"><b>{row.title || row.action}</b><span className="block text-[10px] text-slate-400">{row.employeeName || 'Sistema'} · {moduleLabels[row.module] || row.module}</span></div>)}{!data.recentAudit?.length && <p className="text-xs text-slate-400">Sin acciones recientes.</p>}</div></section></div></div>;
+  return <div className="space-y-6"><section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">{cards.map(([label, value, link]) => <a key={label} href={`${appBasePath()}?seccion=${link}`} onClick={(event) => openSection(event, String(link))} className="rounded-2xl border bg-white p-4 shadow-sm hover:border-indigo-300"><span className="block text-[10px] font-black uppercase text-slate-400">{label}</span><strong className="mt-1 block text-2xl font-black">{value}</strong><span className="text-[10px] font-bold text-indigo-600">Ver detalle</span></a>)}</section><div className="grid gap-5 lg:grid-cols-3"><section className="rounded-2xl border bg-white p-5"><h3 className="font-bold">Próxima guardia / paro</h3>{data.nextStrikeDuty ? <p className="mt-3 text-sm">{new Date(data.nextStrikeDuty.date).toLocaleDateString('es-AR')}<span className="block text-xs text-slate-500">{data.nextStrikeDuty.notes || 'Sin observaciones'}</span></p> : <p className="mt-3 text-xs text-slate-400">Sin próxima guardia configurada.</p>}</section><section className="rounded-2xl border bg-white p-5"><h3 className="font-bold">Tecnologías más declaradas</h3><div className="mt-3 space-y-2">{data.technologies?.map((row: any) => <div key={row.name} className="flex justify-between rounded-lg bg-slate-50 px-3 py-2 text-xs"><span>{row.name}</span><b>{row.count}</b></div>)}{!data.technologies?.length && <p className="text-xs text-slate-400">Sin stacks declarados.</p>}</div></section><section className="rounded-2xl border bg-white p-5"><h3 className="font-bold">Auditoría reciente</h3><div className="mt-3 space-y-2">{data.recentAudit?.map((row: any) => <div key={row.id} className="border-b pb-2 text-xs"><b>{row.title || row.action}</b><span className="block text-[10px] text-slate-400">{row.employeeName || 'Sistema'} · {moduleLabels[row.module] || row.module}</span></div>)}{!data.recentAudit?.length && <p className="text-xs text-slate-400">Sin acciones recientes.</p>}</div></section></div></div>;
 }
 
 function AuditView() {

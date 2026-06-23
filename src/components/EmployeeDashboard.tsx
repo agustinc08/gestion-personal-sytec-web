@@ -58,6 +58,9 @@ export default function EmployeeDashboard({
       licencias: 'licencias',
       perfil: 'perfil',
       empleados: 'perfil',
+      comunicados: 'perfil',
+      guardias: 'perfil',
+      asistencia: 'carga_diaria',
     };
     return section && map[section] ? map[section] : 'carga_diaria';
   };
@@ -72,6 +75,9 @@ export default function EmployeeDashboard({
         licencias: 'licencias',
         perfil: 'perfil',
         empleados: 'perfil',
+        comunicados: 'perfil',
+        guardias: 'perfil',
+        asistencia: 'carga_diaria',
       };
       if (section && map[section]) setActiveTab(map[section]);
     };

@@ -98,6 +98,9 @@ export default function AdminDashboard({
     const section = new URLSearchParams(window.location.search).get('seccion');
     const map: Record<string, 'v2' | 'announcements' | 'employees' | 'attendance' | 'projects' | 'statistics' | 'strikes' | 'settings' | 'dependencies' | 'profile'> = {
       empleados: 'employees',
+      asistencia: 'attendance',
+      comunicados: 'announcements',
+      guardias: 'strikes',
       proyectos: 'projects',
       licencias: 'attendance',
       dependencias: 'dependencies',
@@ -113,6 +116,9 @@ export default function AdminDashboard({
       const section = (event as CustomEvent<{ section?: string }>).detail?.section;
       const map: Record<string, typeof adminTab> = {
         empleados: 'employees',
+        asistencia: 'attendance',
+        comunicados: 'announcements',
+        guardias: 'strikes',
         proyectos: 'projects',
         licencias: 'attendance',
         dependencias: 'dependencies',

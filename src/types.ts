@@ -28,6 +28,8 @@ export interface WorkLog {
   mode: 'presencial' | 'remoto' | 'mixto' | 'licencia';
   activityType?: ActivityType;
   hours?: number;
+  entryTime?: string;
+  exitTime?: string;
 }
 
 export interface ProjectUpdate {

@@ -1,4 +1,4 @@
-Ôªøimport React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { statisticsApi } from '../api/statistics.api';
 import { Dependency, Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, LicenseArticle, ActivityType, StatisticsResponse } from '../types';
 import { activityTypeLabel, deploymentEnvironmentLabel, deploymentStatusLabel, difficultyLabel, licenseStatusLabel, projectStatusLabel, statColumnLabel } from '../utils/labels';
@@ -167,10 +167,14 @@ export default function AdminDashboard({
     SUPPORT: 'Soporte',
     MAINTENANCE: 'Mantenimiento',
     DEPLOY: 'Deploy',
-    MEETING: 'Reuni√≥n',
-    DOCUMENTATION: 'Documentaci√≥n',
+    MEETING: 'ReuniÛn',
+    DOCUMENTATION: 'DocumentaciÛn',
     OTHER: 'Otro',
   };
+  const splitTechStack = (value?: string) => (value || '').split(/[,;/|]+/).map((item) => item.trim()).filter(Boolean);
+  const compactTechStack = (value?: string) => splitTechStack(value).slice(0, 4);
+  const compensatoryText = (days: number) => days === 0 ? 'Sin dÌas compensatorios acumulados' : days === 1 ? '1 dÌa disponible' : `${days} dÌas disponibles`;
+  const workLogTimeText = (log: WorkLog) => (log.entryTime || log.exitTime) ? `Horario: ${log.entryTime || '--:--'} a ${log.exitTime || '--:--'}` : '';
 
   // Selected employee detail state
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(employees[0]?.id || null);
@@ -197,6 +201,7 @@ export default function AdminDashboard({
   const [projYear, setProjYear] = useState(new Date().getFullYear());
   const [projDifficulty, setProjDifficulty] = useState<Project['difficulty']>('MEDIUM');
   const [projDeadline, setProjDeadline] = useState('');
+  const [projTechStack, setProjTechStack] = useState('');
   const [projOwnerId, setProjOwnerId] = useState('');
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
@@ -244,7 +249,7 @@ export default function AdminDashboard({
       .then(setStatistics)
       .catch((error: any) => {
         const status = error?.response?.status;
-        setStatsError(status === 403 ? 'No ten√©s permisos para ver estas estad√≠sticas.' : 'No se pudieron cargar las estad√≠sticas.');
+        setStatsError(status === 403 ? 'No tenÈs permisos para ver estas estadÌsticas.' : 'No se pudieron cargar las estadÌsticas.');
       })
       .finally(() => setStatsLoading(false));
   }, [adminTab, statsYear, statsMonth, statsEmployeeId, statsProjectId, statsActivityType, statsProjectStatus, statsDifficulty, statsFrom, statsTo]);
@@ -264,7 +269,7 @@ export default function AdminDashboard({
   const [manualReason, setManualReason] = useState('');
   const [manualApprovedImmediately, setManualApprovedImmediately] = useState<boolean>(true);
   const [articleCode, setArticleCode] = useState('ART_34');
-  const [articleTitle, setArticleTitle] = useState('Art√≠culo 34');
+  const [articleTitle, setArticleTitle] = useState('ArtÌculo 34');
   const [articleDescription, setArticleDescription] = useState('');
   const [editingArticleId, setEditingArticleId] = useState<string | null>(null);
   const [editingArticleCode, setEditingArticleCode] = useState('');
@@ -346,11 +351,11 @@ export default function AdminDashboard({
 
   const saveEditedLicense = (lic: LicenseRequest) => {
     if (!editLicenseStart || !editLicenseEnd || !editLicenseReason.trim()) {
-      triggerAlert('error', 'Por favor, completa la fecha de inicio, finalizaci√≥n y motivo.');
+      triggerAlert('error', 'Por favor, completa la fecha de inicio, finalizaciÛn y motivo.');
       return;
     }
     if (new Date(editLicenseStart) > new Date(editLicenseEnd)) {
-      triggerAlert('error', 'La fecha de inicio no puede ser posterior a la de finalizaci√≥n.');
+      triggerAlert('error', 'La fecha de inicio no puede ser posterior a la de finalizaciÛn.');
       return;
     }
     
@@ -385,7 +390,7 @@ export default function AdminDashboard({
     e.preventDefault();
     if (!selectedEmp) return;
     if (!editName.trim() || !editEmail.trim() || !editCuil.trim()) {
-      triggerAlert('error', 'Por favor, complet√° Nombre, Email y CUIL. La clave solo se completa si quer√©s cambiarla.');
+      triggerAlert('error', 'Por favor, complet· Nombre, Email y CUIL. La clave solo se completa si querÈs cambiarla.');
       return;
     }
 
@@ -403,7 +408,7 @@ export default function AdminDashboard({
     });
 
     setIsEditingProfile(false);
-    triggerAlert('success', `¬°Perfil de ${editName} actualizado con √©xito en toda la red!`);
+    triggerAlert('success', `°Perfil de ${editName} actualizado con Èxito en toda la red!`);
   };
 
   const toggleEditRemoteDay = (day: string) => {
@@ -469,7 +474,7 @@ export default function AdminDashboard({
         ...empToUpdate,
         strikeDutyOrder: nextOrder,
       });
-      triggerAlert('success', `¬°${empToUpdate.name} fue agregado al plantel de guardia de paro con orden #${nextOrder}!`);
+      triggerAlert('success', `°${empToUpdate.name} fue agregado al plantel de guardia de paro con orden #${nextOrder}!`);
     }
   };
 
@@ -484,14 +489,14 @@ export default function AdminDashboard({
   const handleSwapOrders = (empIdA: string, empIdB: string) => {
     if (onSwapStrikeDutyOrders) {
       onSwapStrikeDutyOrders(empIdA, empIdB);
-      triggerAlert('success', '¬°Se complet√≥ el intercambio de turnos de guardia!');
+      triggerAlert('success', '°Se completÛ el intercambio de turnos de guardia!');
     } else {
       const empA = employees.find(e => e.id === empIdA);
       const empB = employees.find(e => e.id === empIdB);
       if (empA && empB) {
         onUpdateEmployee({ ...empA, strikeDutyOrder: empB.strikeDutyOrder });
         onUpdateEmployee({ ...empB, strikeDutyOrder: empA.strikeDutyOrder });
-        triggerAlert('success', '¬°Turnos intercambiados!');
+        triggerAlert('success', '°Turnos intercambiados!');
       }
     }
     setSwappingSourceEmpId(null);
@@ -553,6 +558,7 @@ export default function AdminDashboard({
     setProjYear(new Date().getFullYear());
     setProjDifficulty('MEDIUM');
     setProjDeadline('');
+    setProjTechStack('');
     setProjOwnerId('');
   };
 
@@ -564,7 +570,7 @@ export default function AdminDashboard({
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!projName.trim() || !projDesc.trim()) {
-      triggerAlert('error', 'Por favor, completa el nombre y la descripci√≥n del proyecto.');
+      triggerAlert('error', 'Por favor, completa el nombre y la descripciÛn del proyecto.');
       return;
     }
     if (projAssignedIds.length === 0) {
@@ -583,13 +589,14 @@ export default function AdminDashboard({
         year: projYear,
         difficulty: projDifficulty,
         deadline: projDeadline,
+        techStack: projTechStack,
       }));
 
       resetProjectForm();
       setIsCreateProjectOpen(false);
-      triggerAlert('success', 'Proyecto creado con √©xito. Ahora los empleados pueden registrar avances vinculados.');
+      triggerAlert('success', 'Proyecto creado con Èxito. Ahora los empleados pueden registrar avances vinculados.');
     } catch {
-      triggerAlert('error', 'No se pudo crear el proyecto. Revis√° los datos e intent√° nuevamente.');
+      triggerAlert('error', 'No se pudo crear el proyecto. Revis· los datos e intent· nuevamente.');
     } finally {
       setIsCreatingProject(false);
     }
@@ -597,7 +604,7 @@ export default function AdminDashboard({
 
   const handleAddProjectUpdateByAdmin = (projectId: string) => {
     if (!newUpdateText.trim()) {
-      triggerAlert('error', 'Por favor, escribe el contenido de la actualizaci√≥n.');
+      triggerAlert('error', 'Por favor, escribe el contenido de la actualizaciÛn.');
       return;
     }
     if (!onAddProjectUpdate) return;
@@ -619,9 +626,9 @@ export default function AdminDashboard({
         setNewUpdateNextStep('');
         setNewUpdateHours('');
         setNewUpdateActivityType('PROJECT');
-        triggerAlert('success', 'Actualizaci√≥n de proyecto registrada con √©xito.');
+        triggerAlert('success', 'ActualizaciÛn de proyecto registrada con Èxito.');
       })
-      .catch(() => triggerAlert('error', 'No se pudo registrar la actualizaci√≥n del proyecto.'));
+      .catch(() => triggerAlert('error', 'No se pudo registrar la actualizaciÛn del proyecto.'));
   };
 
   const handleSaveProjectDetails = (e: React.FormEvent<HTMLFormElement>, project: Project) => {
@@ -663,12 +670,12 @@ export default function AdminDashboard({
   const handleCreateManualLicense = (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualStart || !manualEnd || !manualReason.trim()) {
-      triggerAlert('error', 'Por favor, completa el rango de fechas y la justificaci√≥n.');
+      triggerAlert('error', 'Por favor, completa el rango de fechas y la justificaciÛn.');
       return;
     }
 
     if (new Date(manualStart) > new Date(manualEnd)) {
-      triggerAlert('error', 'La fecha de inicio no puede ser posterior a la de finalizaci√≥n.');
+      triggerAlert('error', 'La fecha de inicio no puede ser posterior a la de finalizaciÛn.');
       return;
     }
 
@@ -685,7 +692,7 @@ export default function AdminDashboard({
     setManualStart('');
     setManualEnd('');
     setManualReason('');
-    triggerAlert('success', manualApprovedImmediately ? 'Licencia registrada y aprobada instant√°neamente.' : 'Licencia registrada como pendiente.');
+    triggerAlert('success', manualApprovedImmediately ? 'Licencia registrada y aprobada instant·neamente.' : 'Licencia registrada como pendiente.');
   };
 
   const handleCreateLicenseArticle = (e: React.FormEvent) => {
@@ -697,9 +704,9 @@ export default function AdminDashboard({
         setArticleCode('');
         setArticleTitle('');
         setArticleDescription('');
-        triggerAlert('success', 'Art√≠culo de licencia creado.');
+        triggerAlert('success', 'ArtÌculo de licencia creado.');
       })
-      .catch(() => triggerAlert('error', 'No se pudo crear el art√≠culo.'));
+      .catch(() => triggerAlert('error', 'No se pudo crear el artÌculo.'));
   };
 
   const startEditLicenseArticle = (article: LicenseArticle) => {
@@ -711,7 +718,7 @@ export default function AdminDashboard({
 
   const handleSaveLicenseArticle = (article: LicenseArticle) => {
     if (!onUpdateLicenseArticle || !editingArticleCode.trim() || !editingArticleTitle.trim()) {
-      triggerAlert('error', 'Completa codigo y nombre del art√≠culo.');
+      triggerAlert('error', 'Completa codigo y nombre del artÌculo.');
       return;
     }
     Promise.resolve(onUpdateLicenseArticle(article.id, {
@@ -722,9 +729,9 @@ export default function AdminDashboard({
     }))
       .then(() => {
         setEditingArticleId(null);
-        triggerAlert('success', 'Art√≠culo actualizado.');
+        triggerAlert('success', 'ArtÌculo actualizado.');
       })
-      .catch(() => triggerAlert('error', 'No se pudo actualizar el art√≠culo.'));
+      .catch(() => triggerAlert('error', 'No se pudo actualizar el artÌculo.'));
   };
 
   const handleAddLicenseField = (e: React.FormEvent) => {
@@ -773,7 +780,7 @@ export default function AdminDashboard({
       ['startDate', 'Fecha inicio'],
       ['endDate', 'Fecha fin'],
       ['days', 'Dias'],
-      ['article', 'Art√≠culo'],
+      ['article', 'ArtÌculo'],
       ['notes', 'Notas'],
     ];
     for (const [key, label] of fields) {
@@ -782,8 +789,8 @@ export default function AdminDashboard({
       editableValues[key] = value;
     }
     Promise.resolve(onGenerateLicensePdf(req.id, editableValues))
-      .then(() => triggerAlert('success', 'PDF generado. Se abrio en una nueva pesta√±a.'))
-      .catch(() => triggerAlert('error', 'No se pudo generar el PDF. Verifica que la licencia tenga art√≠culo y plantilla.'));
+      .then(() => triggerAlert('success', 'PDF generado. Se abrio en una nueva pestaÒa.'))
+      .catch(() => triggerAlert('error', 'No se pudo generar el PDF. Verifica que la licencia tenga artÌculo y plantilla.'));
   };
 
   const handleTestArticlePdf = (article: LicenseArticle) => {
@@ -823,7 +830,7 @@ export default function AdminDashboard({
       notes: ''
     });
 
-    triggerAlert('success', '¬°Planes del pr√≥ximo paro y guardia de contingencia sincronizados con √©xito!');
+    triggerAlert('success', '°Planes del prÛximo paro y guardia de contingencia sincronizados con Èxito!');
   };
 
   const handleCreateEmployee = (e: React.FormEvent) => {
@@ -855,7 +862,7 @@ export default function AdminDashboard({
     setNewEmpPassword('');
     setNewEmpTotalDays(0);
     setNewEmpRemote([]);
-    triggerAlert('success', `Empleado "${newEmpName}" con CUIL ${newEmpCuil} dado de alta con √©xito con contrase√±a temporaria.`);
+    triggerAlert('success', `Empleado "${newEmpName}" con CUIL ${newEmpCuil} dado de alta con Èxito con contraseÒa temporaria.`);
   };
 
   const handleSaveAdminSelfProfile = async (e: React.FormEvent) => {
@@ -899,7 +906,7 @@ export default function AdminDashboard({
   };
 
   // Days list for checkboxes 
-  const DAYS_LIST = ['Lunes', 'Martes', 'Mi√©rcoles', 'Jueves', 'Viernes'];
+  const DAYS_LIST = ['Lunes', 'Martes', 'MiÈrcoles', 'Jueves', 'Viernes'];
 
   return (
     <div className="w-full">
@@ -912,7 +919,7 @@ export default function AdminDashboard({
         }`}>
           {alertMsg.type === 'success' ? <Check className="w-5 h-5 text-emerald-600 flex-shrink-0" /> : <AlertCircle className="w-5 h-5 text-rose-600 flex-shrink-0" />}
           <div>
-            <p className="font-semibold text-sm">{alertMsg.type === 'success' ? 'Operaci√≥n exitosa' : 'Atenci√≥n'}</p>
+            <p className="font-semibold text-sm">{alertMsg.type === 'success' ? 'OperaciÛn exitosa' : 'AtenciÛn'}</p>
             <p className="text-xs mt-0.5">{alertMsg.text}</p>
           </div>
         </div>
@@ -922,7 +929,7 @@ export default function AdminDashboard({
       {confirmDialog && (
         <div className="fixed inset-0 z-[150] bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl border border-slate-200 p-6 max-w-md w-full shadow-2xl animate-fade-in text-slate-900">
-            <h3 className="text-sm font-black tracking-wider text-slate-500 uppercase mb-2">Confirmar Acci√≥n</h3>
+            <h3 className="text-sm font-black tracking-wider text-slate-500 uppercase mb-2">Confirmar AcciÛn</h3>
             <p className="text-sm text-slate-600 mb-6">{confirmDialog.message}</p>
             <div className="flex justify-end gap-3 text-xs font-bold">
               <button
@@ -951,7 +958,7 @@ export default function AdminDashboard({
       <div className="bg-white p-6 rounded-3xl border border-gray-150 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
         <div>
           <span className="bg-red-50 text-red-700 border border-red-100 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
-            Consola de Administraci√≥n Activa
+            Consola de AdministraciÛn Activa
           </span>
           <h2 className="text-2xl font-black text-gray-900 tracking-tight mt-2.5">Panel de Control y Asistencia</h2>
           <p className="text-gray-500 text-sm mt-1">Supervisa fichadas diarias, licencias solicitadas por Ley y avance de proyectos.</p>
@@ -989,7 +996,7 @@ export default function AdminDashboard({
                      Control de Parte Diario Pendiente
                   </h3>
                   <p className="text-xs text-red-800 mt-1">
-                    Hay <strong>{agentsWithoutLog.length} de {nonAdminEmployees.length} agentes</strong> que todav√≠a no han cargado su ficha de tareas del d√≠a de hoy (<strong>{todayStr}</strong>).
+                    Hay <strong>{agentsWithoutLog.length} de {nonAdminEmployees.length} agentes</strong> que todavÌa no han cargado su ficha de tareas del dÌa de hoy (<strong>{todayStr}</strong>).
                   </p>
                 </div>
                 <div className="bg-red-200 text-red-900 border border-red-300 text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-widest self-start sm:self-center font-mono">
@@ -1093,7 +1100,7 @@ export default function AdminDashboard({
           }`}
         >
           <BarChart3 className="w-4 h-4" />
-          Estad√≠sticas
+          EstadÌsticas
         </button>
         <button
           onClick={() => setAdminTab('strikes')}
@@ -1115,7 +1122,7 @@ export default function AdminDashboard({
           }`}
         >
           <Settings className="w-4 h-4 text-indigo-500" />
-          Administraci√≥n de Usuarios
+          AdministraciÛn de Usuarios
         </button>
         <button
           onClick={() => setAdminTab('dependencies')}
@@ -1189,11 +1196,11 @@ export default function AdminDashboard({
                       <div className="mt-4 pt-3 border-t border-slate-150 grid grid-cols-2 gap-2 text-center text-xs">
                         <div className="bg-slate-50 p-1.5 rounded-lg">
                           <span className="block text-[9px] uppercase font-bold text-slate-400">Restan</span>
-                          <strong className="text-gray-800 font-mono font-bold text-xs">{remaining} d√≠as</strong>
+                          <strong className="text-gray-800 font-mono font-bold text-xs">{remaining} dÌas</strong>
                         </div>
                         <div className="bg-slate-50 p-1.5 rounded-lg">
                           <span className="block text-[9px] uppercase font-bold text-slate-400">Compensatorios</span>
-                          <strong className="text-indigo-600 font-bold text-xs">{emp.guardiasDone ? `${emp.guardiasDone} d√≠as` : 'Sin saldo'}</strong>
+                          <strong className="text-indigo-600 font-bold text-xs">{emp.guardiasDone ? `${emp.guardiasDone} dÌas` : 'Sin saldo'}</strong>
                         </div>
                       </div>
                     </div>
@@ -1211,7 +1218,7 @@ export default function AdminDashboard({
                     <form onSubmit={handleSaveProfileEdit} className="space-y-4">
                       <div className="flex justify-between items-center border-b pb-3 mb-1">
                         <div>
-                          <span className="text-xs font-black text-red-700 uppercase tracking-widest block"> Gesti√≥n de Agente</span>
+                          <span className="text-xs font-black text-red-700 uppercase tracking-widest block"> GestiÛn de Agente</span>
                           <h4 className="text-md font-bold text-slate-800">Modificar Perfil: {selectedEmp.name}</h4>
                         </div>
                         <button
@@ -1235,7 +1242,7 @@ export default function AdminDashboard({
                           />
                         </div>
                         <div>
-                          <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1.5">Correo Electr√≥nico</label>
+                          <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1.5">Correo ElectrÛnico</label>
                           <input
                             type="email"
                             value={editEmail}
@@ -1248,7 +1255,7 @@ export default function AdminDashboard({
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1.5">Cargo o Funci√≥n</label>
+                          <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1.5">Cargo o FunciÛn</label>
                           <input
                             type="text"
                             value={editPosition}
@@ -1258,7 +1265,7 @@ export default function AdminDashboard({
                           />
                         </div>
                         <div>
-                          <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1.5">Dependencia de Adscripci√≥n</label>
+                          <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1.5">Dependencia de AdscripciÛn</label>
                           <select
                             value={editDependency}
                             onChange={(e) => setEditDependency(e.target.value)}
@@ -1297,7 +1304,7 @@ export default function AdminDashboard({
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t pt-3">
                         <div>
-                          <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1.5">D√≠as de Feria del A√±o (Ordinarios)</label>
+                          <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1.5">DÌas de Feria del AÒo (Ordinarios)</label>
                           <input
                             type="number"
                             value={editTotalLicenseDays}
@@ -1318,7 +1325,7 @@ export default function AdminDashboard({
                       </div>
 
                       <div className="border-t pt-3">
-                        <label className="block text-[10px] font-bold text-slate-600 uppercase mb-2">Home Office asignado (D√≠as)</label>
+                        <label className="block text-[10px] font-bold text-slate-600 uppercase mb-2">Home Office asignado (DÌas)</label>
                         <div className="flex flex-wrap gap-2">
                           {DAYS_LIST.map((day) => {
                             const isSelected = editRemoteDays.includes(day);
@@ -1414,27 +1421,29 @@ export default function AdminDashboard({
 
                       {/* General specs */}
                       <div className="grid grid-cols-3 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-100 text-center">
-                        <div>
-                          <span className="text-[9px] uppercase text-gray-400 font-bold block">D√≠as compensatorios por guardia</span>
-                          <span className="text-md font-bold text-indigo-600">{selectedEmp.guardiasDone > 0 ? `Saldo actual: ${selectedEmp.guardiasDone} d√≠as` : 'Sin d√≠as compensatorios acumulados'}</span>
+                                                <div className="rounded-xl bg-white p-3 text-left border border-indigo-100">
+                          <span className="text-[9px] uppercase text-gray-400 font-bold block">DÌas compensatorios por guardia</span>
+                          <span className="mt-1 block text-[10px] font-bold text-slate-500">Saldo actual</span>
+                          <strong className="block text-lg font-black text-indigo-700">{selectedEmp.guardiasDone} dÌas</strong>
+                          <span className="mt-1 block text-[10px] font-semibold text-slate-500">{compensatoryText(selectedEmp.guardiasDone)}</span>
                           {onAdjustCompensatoryDays && (
                             <button
                               type="button"
                               onClick={() => {
                                 const value = window.prompt('Saldo compensatorio del agente:', String(selectedEmp.guardiasDone));
                                 if (value === null) return; const days = Number(value);
-                                if (!Number.isInteger(days) || days < 0) { triggerAlert('error', 'Ingres√° una cantidad v√°lida de d√≠as.'); return; }
-                                if (!window.confirm('¬øSeguro que quer√©s ajustar los d√≠as compensatorios de este agente? Esta acci√≥n quedar√° registrada en auditor√≠a.')) return;
+                                if (!Number.isInteger(days) || days < 0) { triggerAlert('error', 'Ingres· una cantidad v·lida de dÌas.'); return; }
+                                if (!window.confirm('øSeguro que querÈs ajustar los dÌas compensatorios de este agente? Esta acciÛn quedar· registrada en auditorÌa.')) return;
                                 Promise.resolve(onAdjustCompensatoryDays(selectedEmp.id, days)).then(() => triggerAlert('success', 'Saldo compensatorio actualizado.')).catch(() => triggerAlert('error', 'No se pudo ajustar el saldo.'));
                               }}
-                              className="mt-1 text-[9px] font-bold text-indigo-700 hover:text-indigo-900 underline"
+                              className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-[10px] font-bold text-indigo-700 hover:bg-indigo-100"
                             >
                               Ajustar saldo
                             </button>
                           )}
                         </div>
                         <div>
-                          <span className="text-[9px] uppercase text-gray-400 font-bold block">D√≠as de licencia tomados</span>
+                          <span className="text-[9px] uppercase text-gray-400 font-bold block">DÌas de licencia tomados</span>
                           <span className="text-md font-bold font-mono text-amber-600">-{selectedEmp.licenseDaysTaken}d</span>
                         </div>
                         <div>
@@ -1444,7 +1453,7 @@ export default function AdminDashboard({
                       </div>
 
                       <div className="space-y-1 bg-amber-50/60 p-3 rounded-xl border border-amber-100 text-xs text-amber-900">
-                        <p className="font-semibold text-[11px] uppercase tracking-wide text-amber-800 block">D√≠as de Home office asignados:</p>
+                        <p className="font-semibold text-[11px] uppercase tracking-wide text-amber-800 block">DÌas de Home office asignados:</p>
                         <div className="flex gap-1.5 mt-1">
                           {selectedEmp.remoteDaysAssigned.length === 0 ? (
                             <span className="italic text-gray-500">100% Presencial</span>
@@ -1463,7 +1472,7 @@ export default function AdminDashboard({
                   {/* Ultimate WorkLogs (listado corto) as requested */}
                   <div className="border-t pt-5">
                     <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3 flex items-center justify-between">
-                      <span>√öltimos Partes Diarios ({selectedEmpLogs.length})</span>
+                      <span>⁄ltimos Partes Diarios ({selectedEmpLogs.length})</span>
                     </h4>
 
                     {selectedEmpLogs.length === 0 ? (
@@ -1512,13 +1521,13 @@ export default function AdminDashboard({
                                   
                                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                     <div>
-                                      <label className="block text-[8px] font-bold text-gray-500 uppercase mb-1">Art√≠culo o Guardia</label>
+                                      <label className="block text-[8px] font-bold text-gray-500 uppercase mb-1">ArtÌculo o Guardia</label>
                                       <select
                                         value={editLicenseArticle}
                                         onChange={(e) => setEditLicenseArticle(e.target.value)}
                                         className="w-full text-xs bg-white border border-slate-300 rounded p-1.5 text-slate-800 font-semibold"
                                       >
-                                        <option value="Guardia en Feria">Guardia en Feria (Suma d√≠as)</option>
+                                        <option value="Guardia en Feria">Guardia en Feria (Suma dÌas)</option>
                                         {licenseRules.map((rule) => (
                                           <option key={rule.id} value={rule.article}>
                                             {rule.article} - {rule.name}
@@ -1528,7 +1537,7 @@ export default function AdminDashboard({
                                     </div>
                                     
                                     <div>
-                                      <label className="block text-[8px] font-bold text-gray-500 uppercase mb-1">Estado de Aprobaci√≥n</label>
+                                      <label className="block text-[8px] font-bold text-gray-500 uppercase mb-1">Estado de AprobaciÛn</label>
                                       <select
                                         value={editLicenseStatus}
                                         onChange={(e) => setEditLicenseStatus(e.target.value as any)}
@@ -1568,7 +1577,7 @@ export default function AdminDashboard({
                                       rows={2}
                                       value={editLicenseReason}
                                       onChange={(e) => setEditLicenseReason(e.target.value)}
-                                      placeholder="Justificativo o raz√≥n..."
+                                      placeholder="Justificativo o razÛn..."
                                       className="w-full text-xs bg-white border border-slate-300 rounded p-1.5 text-slate-800 focus:outline-none"
                                     />
                                   </div>
@@ -1638,7 +1647,7 @@ export default function AdminDashboard({
                                         type="button"
                                         onClick={() => {
                                           setConfirmDialog({
-                                            message: `¬øEst√°s seguro/a de que deseas eliminar este registro de licencia (${lic.article})? Esta acci√≥n reajustar√° el saldo consumido del agente de forma reactiva.`,
+                                            message: `øEst·s seguro/a de que deseas eliminar este registro de licencia (${lic.article})? Esta acciÛn reajustar· el saldo consumido del agente de forma reactiva.`,
                                             confirmText: 'Eliminar Licencia',
                                             onConfirm: () => {
                                               Promise.resolve(onDeleteLicenseRequest(lic.id))
@@ -1666,7 +1675,7 @@ export default function AdminDashboard({
               ) : (
                 <div className="bg-slate-50 p-12 text-center rounded-2xl border border-dashed border-slate-300">
                   <User className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-                  <p className="text-gray-500">Selecciona alg√∫n empleado de la plantilla para ver su ficha completa.</p>
+                  <p className="text-gray-500">Selecciona alg˙n empleado de la plantilla para ver su ficha completa.</p>
                 </div>
               )}
             </div>
@@ -1675,18 +1684,18 @@ export default function AdminDashboard({
 
         {/* TAB 2: ASISTENCIA & LICENCIAS */}
         {adminTab === 'attendance' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          <div className="space-y-6">
             {/* Left Col: Pending license requests & general list */}
-            <div className="lg:col-span-7 space-y-6">
+            <div className="space-y-6">
               <div className="bg-white p-6 rounded-2xl border border-gray-150 shadow-sm">
                 <h3 className="text-lg font-bold text-slate-900 border-b pb-3 mb-4 flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-indigo-600" /> Art√≠culos de licencia y plantillas PDF
+                  <FileText className="w-5 h-5 text-indigo-600" /> ArtÌculos de licencia y plantillas PDF
                 </h3>
                 <form onSubmit={handleCreateLicenseArticle} className="grid grid-cols-1 md:grid-cols-4 gap-2 mb-4">
                   <input value={articleCode} onChange={(e) => setArticleCode(e.target.value)} placeholder="ART_34" className="text-xs border rounded-xl px-3 py-2" />
-                  <input value={articleTitle} onChange={(e) => setArticleTitle(e.target.value)} placeholder="Art√≠culo 34" className="text-xs border rounded-xl px-3 py-2" />
-                  <input value={articleDescription} onChange={(e) => setArticleDescription(e.target.value)} placeholder="Descripci√≥n" className="text-xs border rounded-xl px-3 py-2" />
-                  <button type="submit" className="bg-slate-900 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold px-3 py-2">Crear art√≠culo</button>
+                  <input value={articleTitle} onChange={(e) => setArticleTitle(e.target.value)} placeholder="ArtÌculo 34" className="text-xs border rounded-xl px-3 py-2" />
+                  <input value={articleDescription} onChange={(e) => setArticleDescription(e.target.value)} placeholder="DescripciÛn" className="text-xs border rounded-xl px-3 py-2" />
+                  <button type="submit" className="bg-slate-900 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold px-3 py-2">Crear artÌculo</button>
                 </form>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1713,7 +1722,7 @@ export default function AdminDashboard({
                         )}
                         <button
                           type="button"
-                          onClick={() => onUpdateLicenseArticle && Promise.resolve(onUpdateLicenseArticle(article.id, { isActive: !article.isActive })).catch(() => triggerAlert('error', 'No se pudo actualizar el art√≠culo.'))}
+                          onClick={() => onUpdateLicenseArticle && Promise.resolve(onUpdateLicenseArticle(article.id, { isActive: !article.isActive })).catch(() => triggerAlert('error', 'No se pudo actualizar el artÌculo.'))}
                           className={`text-[10px] font-bold px-2 py-1 rounded-lg ${article.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}
                         >
                           {article.isActive ? 'Activo' : 'Inactivo'}
@@ -1752,10 +1761,10 @@ export default function AdminDashboard({
                           <select value={fieldType} onChange={(e) => setFieldType(e.target.value)} className="text-[10px] border rounded-lg px-2 py-1">
                             <option value="TEXT">Texto</option>
                             <option value="DATE">Fecha</option>
-                            <option value="NUMBER">N√∫mero</option>
-                            <option value="MULTILINE">Multil√≠nea</option>
+                            <option value="NUMBER">N˙mero</option>
+                            <option value="MULTILINE">MultilÌnea</option>
                           </select>
-                          <input type="number" value={fieldPage} onChange={(e) => setFieldPage(Number(e.target.value))} placeholder="P√°gina" className="text-[10px] border rounded-lg px-2 py-1" />
+                          <input type="number" value={fieldPage} onChange={(e) => setFieldPage(Number(e.target.value))} placeholder="P·gina" className="text-[10px] border rounded-lg px-2 py-1" />
                           <input type="number" value={fieldX} onChange={(e) => setFieldX(Number(e.target.value))} placeholder="X" className="text-[10px] border rounded-lg px-2 py-1" />
                           <input type="number" value={fieldY} onChange={(e) => setFieldY(Number(e.target.value))} placeholder="Y" className="text-[10px] border rounded-lg px-2 py-1" />
                           <input type="number" value={fieldFontSize} onChange={(e) => setFieldFontSize(Number(e.target.value))} placeholder="Fuente" className="text-[10px] border rounded-lg px-2 py-1" />
@@ -1782,7 +1791,7 @@ export default function AdminDashboard({
                   <div className="text-center py-8">
                     <Check className="w-12 h-12 text-emerald-500 mx-auto mb-2" />
                     <p className="text-gray-500 text-sm font-semibold">No hay solicitudes de licencias pendientes.</p>
-                    <p className="text-gray-400 text-xs mt-1">¬°Toda la plantilla est√° al d√≠a!</p>
+                    <p className="text-gray-400 text-xs mt-1">°Toda la plantilla est· al dÌa!</p>
                   </div>
                 ) : (
                   <div className="space-y-4">
@@ -1825,7 +1834,7 @@ export default function AdminDashboard({
                             <button
                               onClick={() => {
                                 onApproveRejectRequest(req.id, 'aprobado');
-                                triggerAlert('success', `Solicitud de ${sender?.name} aprobada con √©xito.`);
+                                triggerAlert('success', `Solicitud de ${sender?.name} aprobada con Èxito.`);
                               }}
                               className="px-3.5 py-1.5 text-xs text-white bg-emerald-600 hover:bg-emerald-700 font-bold rounded-lg flex items-center gap-1 cursor-pointer"
                             >
@@ -1853,7 +1862,7 @@ export default function AdminDashboard({
                       <button
                         type="button"
                         onClick={() => setConfirmDialog({
-                          message: '¬øEliminar todos los registros de licencias visibles? Esta accion persiste en PostgreSQL.',
+                          message: 'øEliminar todos los registros de licencias visibles? Esta accion persiste en PostgreSQL.',
                           confirmText: 'Limpiar Licencias',
                           onConfirm: () => {
                             Promise.resolve(onClearLicenses())
@@ -1868,16 +1877,16 @@ export default function AdminDashboard({
                     )}
                   </h3>
                   <p className="text-xs text-gray-400 mt-1 font-sans">
-                    Control, edici√≥n y remoci√≥n unificada de todas las licencias del equipo (Aprobadas, Pendientes y Rechazadas).
+                    Control, ediciÛn y remociÛn unificada de todas las licencias del equipo (Aprobadas, Pendientes y Rechazadas).
                   </p>
                 </div>
 
-                {/* Filtros de B√∫squeda y Estado */}
+                {/* Filtros de B˙squeda y Estado */}
                 <div className="flex flex-col sm:flex-row gap-3 mb-4">
                   <div className="flex-1">
                     <input
                       type="text"
-                      placeholder="Buscar por agente, art√≠culo o motivo..."
+                      placeholder="Buscar por agente, artÌculo o motivo..."
                       value={licenseSearchQuery}
                       onChange={(e) => setLicenseSearchQuery(e.target.value)}
                       className="w-full text-xs h-9 bg-slate-50 border border-gray-300 rounded-xl px-3 text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-550 focus:border-indigo-550 placeholder-slate-400"
@@ -1898,7 +1907,7 @@ export default function AdminDashboard({
                 </div>
 
                 {/* Listado de Solicitudes */}
-                <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+                <div className="space-y-3 max-h-[560px] overflow-y-auto pr-1">
                   {licensePagination.total === 0 ? (
                       <div className="text-center py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-400 text-xs italic font-sans animate-fade-in">
                         No se encontraron registros de licencias que coincidan con los filtros aplicados.
@@ -1919,13 +1928,13 @@ export default function AdminDashboard({
 
                                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                                     <div>
-                                      <label className="block text-[8px] font-bold text-gray-500 uppercase mb-1">Art√≠culo o Guardia</label>
+                                      <label className="block text-[8px] font-bold text-gray-500 uppercase mb-1">ArtÌculo o Guardia</label>
                                       <select
                                         value={editLicenseArticle}
                                         onChange={(e) => setEditLicenseArticle(e.target.value)}
                                         className="w-full text-xs bg-white border border-slate-300 rounded p-1.5 text-slate-800 font-semibold"
                                       >
-                                        <option value="Guardia en Feria">Guardia en Feria (Suma d√≠as)</option>
+                                        <option value="Guardia en Feria">Guardia en Feria (Suma dÌas)</option>
                                         {licenseRules.map((rule) => (
                                           <option key={rule.id} value={rule.article}>
                                             {rule.article} - {rule.name}
@@ -1935,7 +1944,7 @@ export default function AdminDashboard({
                                     </div>
 
                                     <div>
-                                      <label className="block text-[8px] font-bold text-gray-500 uppercase mb-1">Estado de Aprobaci√≥n</label>
+                                      <label className="block text-[8px] font-bold text-gray-500 uppercase mb-1">Estado de AprobaciÛn</label>
                                       <select
                                         value={editLicenseStatus}
                                         onChange={(e) => setEditLicenseStatus(e.target.value as any)}
@@ -1975,7 +1984,7 @@ export default function AdminDashboard({
                                       rows={2}
                                       value={editLicenseReason}
                                       onChange={(e) => setEditLicenseReason(e.target.value)}
-                                      placeholder="Justificativo o raz√≥n..."
+                                      placeholder="Justificativo o razÛn..."
                                       className="w-full text-xs bg-white border border-slate-300 rounded p-1.5 text-slate-800 focus:outline-none"
                                     />
                                   </div>
@@ -2018,7 +2027,7 @@ export default function AdminDashboard({
                                         </span>
                                       </div>
                                       <p className="text-[10.5px] text-slate-600 font-medium font-mono mt-0.5">
-                                        Per√≠odo: <strong className="text-slate-800">{req.startDate}</strong> al <strong className="text-slate-800">{req.endDate}</strong>
+                                        PerÌodo: <strong className="text-slate-800">{req.startDate}</strong> al <strong className="text-slate-800">{req.endDate}</strong>
                                       </p>
                                       {req.reason && (
                                         <p className="text-[10px] text-slate-400 truncate max-w-md mt-1 italic">
@@ -2066,7 +2075,7 @@ export default function AdminDashboard({
                                         type="button"
                                         onClick={() => {
                                           setConfirmDialog({
-                                            message: `¬øEst√°s seguro/a de que deseas eliminar este registro de licencia (${req.article}) de ${sender?.name || 'este agente'}? Esta acci√≥n reajustar√° el saldo consumido del agente de forma reactiva.`,
+                                            message: `øEst·s seguro/a de que deseas eliminar este registro de licencia (${req.article}) de ${sender?.name || 'este agente'}? Esta acciÛn reajustar· el saldo consumido del agente de forma reactiva.`,
                                             confirmText: 'Eliminar Licencia',
                                             onConfirm: () => {
                                               Promise.resolve(onDeleteLicenseRequest(req.id))
@@ -2098,7 +2107,7 @@ export default function AdminDashboard({
                   <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded">Fichadas</span>
                 </h3>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
-                  <input type="number" value={adminWorkLogYear} onChange={(e) => setAdminWorkLogYear(e.target.value)} className="text-xs border border-slate-200 rounded-xl px-3 py-2" placeholder="A√±o" />
+                  <input type="number" value={adminWorkLogYear} onChange={(e) => setAdminWorkLogYear(e.target.value)} className="text-xs border border-slate-200 rounded-xl px-3 py-2" placeholder="AÒo" />
                   <select value={adminWorkLogMonth} onChange={(e) => setAdminWorkLogMonth(e.target.value)} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
                     {Array.from({ length: 12 }, (_, idx) => <option key={idx + 1} value={idx + 1}>{new Date(2026, idx, 1).toLocaleDateString('es-AR', { month: 'long' })}</option>)}
                   </select>
@@ -2148,6 +2157,7 @@ export default function AdminDashboard({
                               {linkedProject && <span className="text-[9px] font-bold bg-emerald-50 border border-emerald-100 text-emerald-700 rounded px-1.5 py-0.5">{linkedProject.name}</span>}
                               {log.activityType && <span className="text-[9px] font-bold bg-indigo-50 border border-indigo-100 text-indigo-700 rounded px-1.5 py-0.5">{activityTypeLabel(log.activityType)}</span>}
                               {log.hours !== undefined && <span className="text-[9px] font-bold bg-slate-50 border border-slate-200 text-slate-700 rounded px-1.5 py-0.5">{log.hours} h</span>}
+                              {workLogTimeText(log) && <span className="text-[9px] font-bold bg-blue-50 border border-blue-100 text-blue-700 rounded px-1.5 py-0.5">{workLogTimeText(log)}</span>}
                             </div>
                           </div>
                         </div>
@@ -2174,12 +2184,12 @@ export default function AdminDashboard({
             </div>
 
             {/* Right Col: Manual licensing addition */}
-            <div className="lg:col-span-5 bg-white p-6 rounded-2xl border border-gray-150 shadow-sm self-start">
+            <div className="bg-white p-6 rounded-2xl border border-gray-150 shadow-sm">
               <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
                 <FilePlus className="w-5 h-5 text-indigo-600" /> Registrar Licencia Manual
               </h3>
               <p className="text-xs text-gray-500 mb-5">
-                Carga una licencia solicitada por un empleado directamente en forma telef√≥nica, presencial u oficio administrativo.
+                Carga una licencia solicitada por un empleado directamente en forma telefÛnica, presencial u oficio administrativo.
               </p>
 
               <form onSubmit={handleCreateManualLicense} className="space-y-4">
@@ -2202,7 +2212,7 @@ export default function AdminDashboard({
 
                 <div>
                   <label className="block text-[10px] font-bold text-gray-600 uppercase tracking-wide mb-2">
-                    Art√≠culo / Ley Reguladora
+                    ArtÌculo / Ley Reguladora
                   </label>
                   <select
                     value={manualArticle}
@@ -2265,7 +2275,7 @@ export default function AdminDashboard({
                     className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
                   />
                   <label htmlFor="manualApprovedImmediately" className="text-xs font-semibold text-slate-700 cursor-pointer select-none">
-                    Aprobar inmediatamente (Descuenta d√≠as)
+                    Aprobar inmediatamente (Descuenta dÌas)
                   </label>
                 </div>
 
@@ -2368,10 +2378,10 @@ export default function AdminDashboard({
 
                     <div className="flex gap-2 self-start sm:self-auto">
                       <button type="button" onClick={() => setIsEditingProject((current) => !current)} className="bg-slate-900 hover:bg-indigo-700 text-white rounded-xl px-4 py-2 text-xs font-bold transition-all">
-                        {isEditingProject ? 'Cancelar edici√≥n' : 'Editar proyecto'}
+                        {isEditingProject ? 'Cancelar ediciÛn' : 'Editar proyecto'}
                       </button>
                       <button type="button" onClick={() => {
-                        if (!window.confirm('¬øSeguro que quer√©s eliminar este proyecto? Esta acci√≥n lo ocultar√° de los listados.')) return;
+                        if (!window.confirm('øSeguro que querÈs eliminar este proyecto? Esta acciÛn lo ocultar· de los listados.')) return;
                         Promise.resolve(onDeleteProject(selectedProj.id)).then(() => { setSelectedProjectId(null); triggerAlert('success', 'Proyecto eliminado correctamente'); }).catch(() => triggerAlert('error', 'No se pudo eliminar el proyecto'));
                       }} className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-bold text-rose-700 hover:bg-rose-100">
                         Eliminar proyecto
@@ -2380,24 +2390,24 @@ export default function AdminDashboard({
                   </div>
 
                   <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-2 bg-white p-4 rounded-2xl border border-gray-150 text-xs">
-                    <div><span className="block text-[9px] uppercase font-bold text-gray-400">A√±o</span><strong>{selectedProj.year || '-'}</strong></div>
+                    <div><span className="block text-[9px] uppercase font-bold text-gray-400">AÒo</span><strong>{selectedProj.year || '-'}</strong></div>
                     <div><span className="block text-[9px] uppercase font-bold text-gray-400">Dificultad</span><strong>{difficultyLabel(selectedProj.difficulty)}</strong></div>
-                    <div><span className="block text-[9px] uppercase font-bold text-gray-400">Fecha l√≠mite</span><strong>{selectedProj.deadline || 'Sin fecha'}</strong></div>
+                    <div><span className="block text-[9px] uppercase font-bold text-gray-400">Fecha lÌmite</span><strong>{selectedProj.deadline || 'Sin fecha'}</strong></div>
                     <div><span className="block text-[9px] uppercase font-bold text-gray-400">Responsable</span><strong>{selectedProj.ownerName || 'Sin asignar'}</strong></div>
-                    <div><span className="block text-[9px] uppercase font-bold text-gray-400">√öltimo deploy</span><strong>{selectedProj.deployments?.[0] ? `${deploymentEnvironmentLabel(selectedProj.deployments[0].environment)} ${deploymentStatusLabel(selectedProj.deployments[0].status)}` : 'Sin deploy'}</strong></div>
-                    <div><span className="block text-[9px] uppercase font-bold text-gray-400">√öltimo avance</span><strong>{selectedProj.lastProgressDate ? new Date(selectedProj.lastProgressDate).toLocaleDateString('es-AR') : 'Sin avances'}</strong></div>
+                    <div><span className="block text-[9px] uppercase font-bold text-gray-400">⁄ltimo deploy</span><strong>{selectedProj.deployments?.[0] ? `${deploymentEnvironmentLabel(selectedProj.deployments[0].environment)} ${deploymentStatusLabel(selectedProj.deployments[0].status)}` : 'Sin deploy'}</strong></div>
+                    <div><span className="block text-[9px] uppercase font-bold text-gray-400">⁄ltimo avance</span><strong>{selectedProj.lastProgressDate ? new Date(selectedProj.lastProgressDate).toLocaleDateString('es-AR') : 'Sin avances'}</strong></div>
                   </div>
 
                   <div className="bg-white p-5 rounded-2xl border border-gray-150 shadow-sm space-y-4">
                     <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                       <div>
                         <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">Resumen del proyecto</h5>
-                        <p className="text-xs text-slate-600 mt-1 leading-relaxed">{selectedProj.description || 'Sin descripci√≥n cargada.'}</p>
+                        <p className="text-xs text-slate-600 mt-1 leading-relaxed">{selectedProj.description || 'Sin descripciÛn cargada.'}</p>
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        {selectedProj.needsRedesign && <span className="px-3 py-1 rounded-full text-[10px] font-bold bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-100">Necesita redise√±o</span>}
+                        {selectedProj.needsRedesign && <span className="px-3 py-1 rounded-full text-[10px] font-bold bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-100">Necesita rediseÒo</span>}
                         {selectedProj.needsRework && <span className="px-3 py-1 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-100">Necesita rehacer</span>}
-                        {!selectedProj.needsRedesign && !selectedProj.needsRework && <span className="px-3 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">Sin alertas de revisi√≥n</span>}
+                        {!selectedProj.needsRedesign && !selectedProj.needsRework && <span className="px-3 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">Sin alertas de revisiÛn</span>}
                       </div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 text-xs">
@@ -2414,8 +2424,8 @@ export default function AdminDashboard({
                         <strong className="text-slate-700">{selectedProj.branch || 'Sin cargar'}</strong>
                       </div>
                       <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-                        <span className="block text-[9px] uppercase font-bold text-slate-400">Tecnolog√≠a / Stack</span>
-                        <strong className="text-slate-700">{selectedProj.techStack || 'Sin cargar'}</strong>
+                        <span className="block text-[9px] uppercase font-bold text-slate-400">TecnologÌa / Stack</span>
+                        <div className="mt-1 flex flex-wrap gap-1.5">{compactTechStack(selectedProj.techStack).length ? compactTechStack(selectedProj.techStack).map((tech) => <span key={tech} className="rounded-full border border-indigo-100 bg-indigo-50 px-2 py-0.5 text-[9px] font-bold text-indigo-700">{tech}</span>) : <strong className="text-slate-700">Sin cargar</strong>}</div>
                       </div>
                     </div>
                     {selectedProj.notes && (
@@ -2434,7 +2444,7 @@ export default function AdminDashboard({
                         <p className="text-[10px] text-slate-500">Permite completar proyectos viejos sin recrearlos.</p>
                       </div>
                       <div className="flex items-center gap-2">
-                        <button type="button" onClick={() => setIsEditingProject(false)} className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl px-4 py-2 text-xs font-bold">Cancelar edici√≥n</button>
+                        <button type="button" onClick={() => setIsEditingProject(false)} className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl px-4 py-2 text-xs font-bold">Cancelar ediciÛn</button>
                         <button type="submit" className="bg-slate-900 hover:bg-indigo-700 text-white rounded-xl px-4 py-2 text-xs font-bold">Guardar cambios</button>
                       </div>
                     </div>
@@ -2444,27 +2454,27 @@ export default function AdminDashboard({
                         <option value="vigente">Vigente</option>
                         <option value="pendiente">Pendiente</option>
                         <option value="en_desarrollo">En desarrollo</option>
-                        <option value="en_revision">En revisi√≥n</option>
+                        <option value="en_revision">En revisiÛn</option>
                         <option value="listo_git">Listo Git</option>
                         <option value="rama_dev">Rama dev</option>
                         <option value="listo_docker">Listo Docker</option>
                         <option value="dockerizado">Dockerizado</option>
                         <option value="deployado">Deployado</option>
                         <option value="terminado">Terminado</option>
-                        <option value="necesita_rediseno">Necesita redise√±o</option>
+                        <option value="necesita_rediseno">Necesita rediseÒo</option>
                         <option value="necesita_rehacer">Necesita rehacer</option>
                         <option value="pausado">Pausado</option>
                         <option value="completado">Completado</option>
                         <option value="archivado">Archivado</option>
                       </select>
-                      <textarea name="description" defaultValue={selectedProj.description} placeholder="Descripci√≥n" rows={3} className="text-xs border rounded-xl px-3 py-2 md:col-span-3" />
+                      <textarea name="description" defaultValue={selectedProj.description} placeholder="DescripciÛn" rows={3} className="text-xs border rounded-xl px-3 py-2 md:col-span-3" />
                       <input name="requesterDependency" defaultValue={selectedProj.requesterDependency} placeholder="Dependencia" className="text-xs border rounded-xl px-3 py-2" />
-                      <input name="year" type="number" defaultValue={selectedProj.year || new Date().getFullYear()} placeholder="A√±o" className="text-xs border rounded-xl px-3 py-2" />
+                      <input name="year" type="number" defaultValue={selectedProj.year || new Date().getFullYear()} placeholder="AÒo" className="text-xs border rounded-xl px-3 py-2" />
                       <select name="difficulty" defaultValue={selectedProj.difficulty || 'MEDIUM'} className="text-xs border rounded-xl px-3 py-2">
                         <option value="LOW">Baja</option>
                         <option value="MEDIUM">Media</option>
                         <option value="HIGH">Alta</option>
-                        <option value="CRITICAL">Cr√≠tica</option>
+                        <option value="CRITICAL">CrÌtica</option>
                       </select>
                       <input name="deadline" type="date" defaultValue={selectedProj.deadline || ''} className="text-xs border rounded-xl px-3 py-2" />
                       <select name="ownerId" defaultValue={selectedProj.ownerId || ''} className="text-xs border rounded-xl px-3 py-2">
@@ -2477,9 +2487,9 @@ export default function AdminDashboard({
                       <input name="repositoryWebUrl" defaultValue={selectedProj.repositoryWebUrl || ''} placeholder="Repo WEB" className="text-xs border rounded-xl px-3 py-2" />
                       <input name="repositoryApiUrl" defaultValue={selectedProj.repositoryApiUrl || ''} placeholder="Repo API" className="text-xs border rounded-xl px-3 py-2" />
                       <input name="branch" defaultValue={selectedProj.branch || ''} placeholder="Rama actual" className="text-xs border rounded-xl px-3 py-2" />
-                      <input name="techStack" defaultValue={selectedProj.techStack || ''} placeholder="Stack / tecnolog√≠a" className="text-xs border rounded-xl px-3 py-2 md:col-span-2" />
+                      <input name="techStack" defaultValue={selectedProj.techStack || ''} placeholder="Stack / tecnologÌa" className="text-xs border rounded-xl px-3 py-2 md:col-span-2" />
                       <textarea name="notes" defaultValue={selectedProj.notes || ''} placeholder="Notas" rows={2} className="text-xs border rounded-xl px-3 py-2 md:col-span-3" />
-                      <label className="text-xs font-bold text-slate-700 flex items-center gap-2"><input name="needsRedesign" type="checkbox" defaultChecked={!!selectedProj.needsRedesign} /> Necesita redise√±o</label>
+                      <label className="text-xs font-bold text-slate-700 flex items-center gap-2"><input name="needsRedesign" type="checkbox" defaultChecked={!!selectedProj.needsRedesign} /> Necesita rediseÒo</label>
                       <label className="text-xs font-bold text-slate-700 flex items-center gap-2"><input name="needsRework" type="checkbox" defaultChecked={!!selectedProj.needsRework} /> Necesita rehacer</label>
                     </div>
                   </form>
@@ -2491,20 +2501,20 @@ export default function AdminDashboard({
                     {/* Left side actions and team stats */}
                     <div className="lg:col-span-5 space-y-6">
                       
-                      {/* Subir Actualizaci√≥n card */}
+                      {/* Subir ActualizaciÛn card */}
                       <div className="bg-white p-6 rounded-2xl border border-gray-150 shadow-sm">
                         <h5 className="text-xs font-black text-indigo-700 uppercase tracking-wider mb-2 flex items-center gap-2">
-                          <MessageSquare className="w-4 h-4" /> Cargar Actualizaci√≥n Oficial
+                          <MessageSquare className="w-4 h-4" /> Cargar ActualizaciÛn Oficial
                         </h5>
                         <p className="text-xs text-gray-550 mb-4">
-                          Public√° novedades administrativas, prioridades o directivas sobre este proyecto. Se indexar√° para consulta de toda la oficina en tiempo real.
+                          Public· novedades administrativas, prioridades o directivas sobre este proyecto. Se indexar· para consulta de toda la oficina en tiempo real.
                         </p>
 
                         <div className="space-y-4">
                           <input
                             value={newUpdateTitle}
                             onChange={(e) => setNewUpdateTitle(e.target.value)}
-                            placeholder="T√≠tulo del avance"
+                            placeholder="TÌtulo del avance"
                             className="w-full text-xs border border-gray-200 rounded-xl p-3 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                           />
                           <div>
@@ -2512,7 +2522,7 @@ export default function AdminDashboard({
                               rows={4}
                               value={newUpdateText}
                               onChange={(e) => setNewUpdateText(e.target.value)}
-                              placeholder="Escrib√≠ aqu√≠ las nuevas directivas o el estado actual del desarrollo de este proyecto..."
+                              placeholder="EscribÌ aquÌ las nuevas directivas o el estado actual del desarrollo de este proyecto..."
                               className="w-full text-xs border border-gray-200 rounded-xl p-3 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                             ></textarea>
                           </div>
@@ -2522,14 +2532,14 @@ export default function AdminDashboard({
                               <option value="SUPPORT">Soporte</option>
                               <option value="MAINTENANCE">Mantenimiento</option>
                               <option value="DEPLOY">Deploy</option>
-                              <option value="MEETING">Reuni√≥n</option>
-                              <option value="DOCUMENTATION">Documentaci√≥n</option>
+                              <option value="MEETING">ReuniÛn</option>
+                              <option value="DOCUMENTATION">DocumentaciÛn</option>
                               <option value="OTHER">Otro</option>
                             </select>
                             <input value={newUpdateStatus} onChange={(e) => setNewUpdateStatus(e.target.value)} placeholder="Estado del avance" className="text-xs border border-gray-200 rounded-xl p-3" />
                             <input value={newUpdateHours} onChange={(e) => setNewUpdateHours(e.target.value)} type="number" min="0" step="0.25" placeholder="Horas dedicadas" className="text-xs border border-gray-200 rounded-xl p-3" />
                             <input value={newUpdateBlockers} onChange={(e) => setNewUpdateBlockers(e.target.value)} placeholder="Bloqueos / problemas" className="text-xs border border-gray-200 rounded-xl p-3" />
-                            <input value={newUpdateNextStep} onChange={(e) => setNewUpdateNextStep(e.target.value)} placeholder="Pr√≥ximo paso" className="text-xs border border-gray-200 rounded-xl p-3" />
+                            <input value={newUpdateNextStep} onChange={(e) => setNewUpdateNextStep(e.target.value)} placeholder="PrÛximo paso" className="text-xs border border-gray-200 rounded-xl p-3" />
                           </div>
                           
                           <button
@@ -2626,7 +2636,7 @@ export default function AdminDashboard({
 
                       {/* Brief statistics */}
                       <div className="bg-slate-50 p-5 rounded-2xl border border-gray-200">
-                        <h5 className="text-[10px] font-black text-slate-700 uppercase tracking-widest mb-3">M√©tricas del Proyecto</h5>
+                        <h5 className="text-[10px] font-black text-slate-700 uppercase tracking-widest mb-3">MÈtricas del Proyecto</h5>
                         <div className="grid grid-cols-2 gap-3 text-center">
                           <div className="bg-white p-3.5 rounded-xl border border-gray-150 shadow-xs">
                             <span className="block text-[9px] uppercase tracking-wide text-gray-400 font-bold mb-1">Partes de Equipo</span>
@@ -2638,7 +2648,7 @@ export default function AdminDashboard({
                           </div>
                         </div>
                         <p className="text-[10px] text-gray-500 mt-3 font-sans leading-relaxed text-center">
-                          Descripci√≥n original: <span className="italic">"{selectedProj.description}"</span>
+                          DescripciÛn original: <span className="italic">"{selectedProj.description}"</span>
                         </p>
                       </div>
 
@@ -2654,16 +2664,16 @@ export default function AdminDashboard({
                           <h5 className="text-xs font-black text-slate-900 uppercase tracking-wider">Historial Integrado de Avances</h5>
                         </div>
                         <span className="text-[10px] bg-slate-100 text-slate-600 font-bold font-mono px-2 py-0.5 rounded">
-                          {combinedTimeline.length} actualizaci√≥nes en total
+                          {combinedTimeline.length} actualizaciÛnes en total
                         </span>
                       </div>
 
-                      {combinedTimeline.length > 10 && <div className="mb-4 flex items-center justify-end gap-2 text-xs"><button type="button" disabled={projectTimelinePage === 1} onClick={() => setProjectTimelinePage((page) => page - 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Anterior</button><strong>P√°gina {projectTimelinePage} de {timelinePages}</strong><button type="button" disabled={projectTimelinePage === timelinePages} onClick={() => setProjectTimelinePage((page) => page + 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Siguiente</button></div>}
+                      {combinedTimeline.length > 10 && <div className="mb-4 flex items-center justify-end gap-2 text-xs"><button type="button" disabled={projectTimelinePage === 1} onClick={() => setProjectTimelinePage((page) => page - 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Anterior</button><strong>P·gina {projectTimelinePage} de {timelinePages}</strong><button type="button" disabled={projectTimelinePage === timelinePages} onClick={() => setProjectTimelinePage((page) => page + 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Siguiente</button></div>}
 
                       {combinedTimeline.length === 0 ? (
                         <div className="py-12 text-center text-gray-405">
-                          <p className="text-xs italic">Este proyecto a√∫n no registra movimientos ni directivas oficiales.</p>
-                          <p className="text-[10px] text-gray-400 mt-1">Los avances aparecer√°n a medida que los agentes reporten partes o el administrador cargue novedades.</p>
+                          <p className="text-xs italic">Este proyecto a˙n no registra movimientos ni directivas oficiales.</p>
+                          <p className="text-[10px] text-gray-400 mt-1">Los avances aparecer·n a medida que los agentes reporten partes o el administrador cargue novedades.</p>
                         </div>
                       ) : (
                         <div className="relative border-l border-indigo-100 pl-4 ml-2 space-y-6">
@@ -2699,7 +2709,7 @@ export default function AdminDashboard({
                                           ? 'bg-rose-100 text-rose-700' 
                                           : 'bg-indigo-100 text-indigo-700'
                                       }`}>
-                                        {isAdminType ? 'Actualizaci√≥n Directa Admin' : 'Parte Diario de Equipo'}
+                                        {isAdminType ? 'ActualizaciÛn Directa Admin' : 'Parte Diario de Equipo'}
                                       </span>
                                     </div>
                                     <span className="text-[9px] font-mono font-medium text-gray-400">
@@ -2718,7 +2728,7 @@ export default function AdminDashboard({
                                       {item.progressStatus && <span className="bg-slate-50 border rounded px-2 py-1"><b>Estado:</b> {item.progressStatus}</span>}
                                       {item.hours !== undefined && <span className="bg-slate-50 border rounded px-2 py-1"><b>Horas:</b> {item.hours}</span>}
                                       {item.blockers && <span className="bg-rose-50 border border-rose-100 rounded px-2 py-1"><b>Bloqueos:</b> {item.blockers}</span>}
-                                      {item.nextStep && <span className="bg-indigo-50 border border-indigo-100 rounded px-2 py-1"><b>Pr√≥ximo:</b> {item.nextStep}</span>}
+                                      {item.nextStep && <span className="bg-indigo-50 border border-indigo-100 rounded px-2 py-1"><b>PrÛximo:</b> {item.nextStep}</span>}
                                     </div>
                                   )}
 
@@ -2756,11 +2766,11 @@ export default function AdminDashboard({
                       ['Listos Docker', projectStats.readyDocker, 'text-cyan-700'],
                       ['Deployados', projectStats.deployed, 'text-emerald-700'],
                       ['Terminados', projectStats.finished, 'text-slate-700'],
-                      ['Redise√±o', projectStats.redesign, 'text-fuchsia-700'],
+                      ['RediseÒo', projectStats.redesign, 'text-fuchsia-700'],
                       ['Rehacer', projectStats.rework, 'text-rose-700'],
                       ['Vencidos', projectStats.overdue, 'text-red-700'],
                       ['Vencen hoy', projectStats.dueToday, 'text-orange-700'],
-                      ['Prox. 15 d√≠as', projectStats.dueIn15, 'text-amber-700'],
+                      ['Prox. 15 dÌas', projectStats.dueIn15, 'text-amber-700'],
                       ['Sin fecha', projectStats.withoutDeadline, 'text-gray-600'],
                     ].map(([label, value, color]) => (
                       <div key={String(label)} className="bg-slate-50 border border-gray-150 rounded-2xl p-3">
@@ -2776,9 +2786,9 @@ export default function AdminDashboard({
                         {projectStats.overdue > 0 && <span className="bg-red-100 text-red-800 px-2 py-1 rounded-lg">Vencidos: {projectStats.overdue}</span>}
                         {projectStats.dueToday > 0 && <span className="bg-orange-100 text-orange-800 px-2 py-1 rounded-lg">Vencen hoy: {projectStats.dueToday}</span>}
                         {projectStats.dueThisWeek > 0 && <span className="bg-amber-100 text-amber-800 px-2 py-1 rounded-lg">Esta semana: {projectStats.dueThisWeek}</span>}
-                        {projectStats.dueIn15 > 0 && <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded-lg">En 15 d√≠as: {projectStats.dueIn15}</span>}
+                        {projectStats.dueIn15 > 0 && <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded-lg">En 15 dÌas: {projectStats.dueIn15}</span>}
                         {projectStats.withoutOwner > 0 && <span className="bg-slate-100 text-slate-700 px-2 py-1 rounded-lg">Sin responsable: {projectStats.withoutOwner}</span>}
-                        {projectStats.withoutDeadline > 0 && <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded-lg">Sin fecha l√≠mite: {projectStats.withoutDeadline}</span>}
+                        {projectStats.withoutDeadline > 0 && <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded-lg">Sin fecha lÌmite: {projectStats.withoutDeadline}</span>}
                       </div>
                     </div>
                   )}
@@ -2792,7 +2802,7 @@ export default function AdminDashboard({
                         <FilePlus className="w-5 h-5 text-indigo-600" /> Crear Proyecto Vigente
                       </h3>
                       <p className="text-xs text-gray-500 mb-5">
-                        Crea un proyecto para que los empleados asignados puedan reportar tareas asociadas mediante coincidencia de t√≠tulo.
+                        Crea un proyecto para que los empleados asignados puedan reportar tareas asociadas mediante coincidencia de tÌtulo.
                       </p>
                     </div>
                     {!isCreateProjectOpen && (
@@ -2816,7 +2826,7 @@ export default function AdminDashboard({
                         type="text"
                         value={projName}
                         onChange={(e) => setProjName(e.target.value)}
-                        placeholder="Ej. Digitalizaci√≥n de Expedientes de SyTec"
+                        placeholder="Ej. DigitalizaciÛn de Expedientes de SyTec"
                         className="w-full text-xs font-semibold border border-gray-300 rounded-xl px-4 py-3 placeholder-gray-400 focus:outline-none"
                       />
                     </div>
@@ -2838,7 +2848,7 @@ export default function AdminDashboard({
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-[10px] font-bold text-gray-600 uppercase tracking-wide mb-1.5">A√±o</label>
+                        <label className="block text-[10px] font-bold text-gray-600 uppercase tracking-wide mb-1.5">AÒo</label>
                         <input
                           type="number"
                           value={projYear}
@@ -2856,7 +2866,7 @@ export default function AdminDashboard({
                           <option value="LOW">Baja</option>
                           <option value="MEDIUM">Media</option>
                           <option value="HIGH">Alta</option>
-                          <option value="CRITICAL">Cr√≠tica</option>
+                          <option value="CRITICAL">CrÌtica</option>
                         </select>
                       </div>
                     </div>
@@ -2883,6 +2893,21 @@ export default function AdminDashboard({
                         </select>
                       </div>
                     </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-600 uppercase tracking-wide mb-1.5">TecnologÌas usadas</label>
+                      <input
+                        type="text"
+                        value={projTechStack}
+                        onChange={(e) => setProjTechStack(e.target.value)}
+                        placeholder="React, Vite, NestJS, Prisma, PostgreSQL"
+                        className="w-full text-xs bg-white border border-gray-300 rounded-xl px-3 py-3"
+                      />
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {splitTechStack(projTechStack).map((tech) => <span key={tech} className="rounded-full border border-indigo-100 bg-indigo-50 px-2 py-0.5 text-[9px] font-bold text-indigo-700">{tech}</span>)}
+                      </div>
+                    </div>
+
 
                     <div>
                       <label className="block text-[10px] font-bold text-gray-600 uppercase tracking-wide mb-2">
@@ -2912,7 +2937,7 @@ export default function AdminDashboard({
 
                     <div>
                       <label className="block text-[10px] font-bold text-gray-600 uppercase tracking-wide mb-1.5">
-                        Breve Descripci√≥n del Objetivo
+                        Breve DescripciÛn del Objetivo
                       </label>
                       <textarea
                         rows={3}
@@ -2946,10 +2971,10 @@ export default function AdminDashboard({
 
                 {/* List & details of projects with live synced updates */}
                 <div className="lg:col-span-7 space-y-4 animate-fade-in">
-                  <h3 className="text-lg font-bold text-slate-900">Proyectos de la Organizaci√≥n</h3>
+                  <h3 className="text-lg font-bold text-slate-900">Proyectos de la OrganizaciÛn</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 bg-white border border-gray-150 rounded-xl p-3">
                     <select value={projectYearFilter} onChange={(e) => setProjectYearFilter(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
-                      <option value="todos">Todos los a√±os</option>
+                      <option value="todos">Todos los aÒos</option>
                       {Array.from(new Set(projects.map((p) => p.year).filter(Boolean))).map((year) => <option key={year} value={year}>{year}</option>)}
                     </select>
                     <select value={projectDifficultyFilter} onChange={(e) => setProjectDifficultyFilter(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
@@ -2957,7 +2982,7 @@ export default function AdminDashboard({
                       <option value="LOW">Baja</option>
                       <option value="MEDIUM">Media</option>
                       <option value="HIGH">Alta</option>
-                      <option value="CRITICAL">Cr√≠tica</option>
+                      <option value="CRITICAL">CrÌtica</option>
                     </select>
                     <select value={projectStatusFilter} onChange={(e) => setProjectStatusFilter(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
                       <option value="todos">Todos los estados</option>
@@ -2967,7 +2992,7 @@ export default function AdminDashboard({
                       <option value="listo_docker">Listo Docker</option>
                       <option value="deployado">Deployado</option>
                       <option value="terminado">Terminado</option>
-                      <option value="necesita_rediseno">Necesita redise√±o</option>
+                      <option value="necesita_rediseno">Necesita rediseÒo</option>
                       <option value="necesita_rehacer">Necesita rehacer</option>
                       <option value="pausado">Pausado</option>
                       <option value="completado">Completado</option>
@@ -2982,13 +3007,13 @@ export default function AdminDashboard({
                       <option value="vencido">Vencidos</option>
                       <option value="vence_hoy">Vencen hoy</option>
                       <option value="esta_semana">Esta semana</option>
-                      <option value="proximo">Pr√≥ximos</option>
+                      <option value="proximo">PrÛximos</option>
                       <option value="sin_fecha">Sin fecha</option>
                     </select>
                     <select value={projectRedesignFilter} onChange={(e) => setProjectRedesignFilter(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
                       <option value="todos">Rediseno: todos</option>
-                      <option value="true">Necesita redise√±o</option>
-                      <option value="false">No necesita redise√±o</option>
+                      <option value="true">Necesita rediseÒo</option>
+                      <option value="false">No necesita rediseÒo</option>
                     </select>
                     <select value={projectReworkFilter} onChange={(e) => setProjectReworkFilter(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
                       <option value="todos">Rehacer: todos</option>
@@ -3000,7 +3025,7 @@ export default function AdminDashboard({
                   {projects.length === 0 ? (
                     <div className="bg-white p-12 text-center rounded-2xl border text-slate-400">
                       <Briefcase className="w-12 h-12 mx-auto mb-2" />
-                      <p className="text-sm">No has publicado ning√∫n proyecto a√∫n.</p>
+                      <p className="text-sm">No has publicado ning˙n proyecto a˙n.</p>
                     </div>
                   ) : (
                     <>
@@ -3033,6 +3058,7 @@ export default function AdminDashboard({
                                 {proj.deadline && <span className="bg-amber-50 border border-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Vence {proj.deadline}</span>}
                                 {proj.ownerName && <span className="bg-emerald-50 border border-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">{proj.ownerName}</span>}
                               </div>
+                              {compactTechStack(proj.techStack).length > 0 && <div className="mt-2 flex flex-wrap gap-1.5">{compactTechStack(proj.techStack).slice(0, 3).map((tech) => <span key={tech} className="rounded-full border border-indigo-100 bg-indigo-50 px-2 py-0.5 text-[9px] font-bold text-indigo-700">{tech}</span>)}</div>}
                               <p className="text-xs text-gray-500 mt-1 lines-2 leading-relaxed h-11 overflow-hidden">{proj.description}</p>
 
                               {/* Team quick indicator */}
@@ -3101,14 +3127,14 @@ export default function AdminDashboard({
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-4">
                 <div>
                   <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                    <BarChart3 className="w-5 h-5 text-indigo-600" /> Estad√≠sticas de la oficina
+                    <BarChart3 className="w-5 h-5 text-indigo-600" /> EstadÌsticas de la oficina
                   </h3>
                   <p className="text-xs text-slate-500">Resumen anual/mensual de proyectos, avances, soporte, deploys y horas cargadas.</p>
                 </div>
                 {statsLoading && <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg">Cargando...</span>}
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2">
-                <input value={statsYear} onChange={(e) => setStatsYear(e.target.value)} placeholder="A√±o" className="text-xs border rounded-xl px-3 py-2" />
+                <input value={statsYear} onChange={(e) => setStatsYear(e.target.value)} placeholder="AÒo" className="text-xs border rounded-xl px-3 py-2" />
                 <select value={statsMonth} onChange={(e) => setStatsMonth(e.target.value)} className="text-xs border rounded-xl px-3 py-2">
                   <option value="todos">Mes</option>
                   {Array.from({ length: 12 }, (_, idx) => <option key={idx + 1} value={idx + 1}>{idx + 1}</option>)}
@@ -3140,7 +3166,7 @@ export default function AdminDashboard({
                   <option value="LOW">Baja</option>
                   <option value="MEDIUM">Media</option>
                   <option value="HIGH">Alta</option>
-                  <option value="CRITICAL">Cr√≠tica</option>
+                  <option value="CRITICAL">CrÌtica</option>
                 </select>
                 <div className="grid grid-cols-2 gap-1">
                   <input type="date" value={statsFrom} onChange={(e) => setStatsFrom(e.target.value)} className="text-[10px] border rounded-xl px-2 py-2" />
@@ -3221,22 +3247,22 @@ export default function AdminDashboard({
             {/* Left Area: Setup form */}
             <div className="lg:col-span-7 bg-white p-6 md:p-8 rounded-2xl border border-gray-150 shadow-sm animate-fade-in">
               <h3 className="text-xl font-bold text-slate-950 mb-2 flex items-center gap-2">
-                <ShieldAlert className="w-6 h-6 text-red-600" /> Programaci√≥n de Paros y Guardias
+                <ShieldAlert className="w-6 h-6 text-red-600" /> ProgramaciÛn de Paros y Guardias
               </h3>
               <p className="text-xs text-gray-500 mb-6 font-sans leading-relaxed">
-                Carga la fecha del pr√≥ximo paro convocado en el Poder Judicial de la Naci√≥n para que se actualice de forma autom√°tica en los perfiles de los empleados y se asigne correctamente al agente que debe cubrir la guardia m√≠nima obligatoria.
+                Carga la fecha del prÛximo paro convocado en el Poder Judicial de la NaciÛn para que se actualice de forma autom·tica en los perfiles de los empleados y se asigne correctamente al agente que debe cubrir la guardia mÌnima obligatoria.
               </p>
 
               <form onSubmit={handleSaveStrikeConfig} className="space-y-6">
                 <div className="bg-red-50/50 p-4 rounded-2xl border border-red-100 space-y-4">
                   <span className="text-xs font-bold text-red-800 uppercase tracking-wide block">
-                    Pr√≥xima Medida de Fuerza (A Convocarse)
+                    PrÛxima Medida de Fuerza (A Convocarse)
                   </span>
                   
                   <div className="grid grid-cols-1 gap-4">
                     <div>
                       <label className="block text-[11px] font-bold text-gray-650 uppercase mb-2">
-                        Fecha del Pr√≥ximo Paro
+                        Fecha del PrÛximo Paro
                       </label>
                       <input
                         type="date"
@@ -3252,7 +3278,7 @@ export default function AdminDashboard({
                       return (
                         <div className="bg-white p-3.5 rounded-xl border border-red-200/60 text-xs">
                           <span className="block text-[10px] font-extrabold text-red-800 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-                             Agente Designado por Rotaci√≥n (Autom√°tico)
+                             Agente Designado por RotaciÛn (Autom·tico)
                           </span>
                           {activeNextAgent ? (
                             <div className="flex items-center gap-2.5 mt-1 bg-red-50/40 p-2.5 rounded-xl border border-red-105">
@@ -3278,13 +3304,13 @@ export default function AdminDashboard({
 
                 <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/70 space-y-4">
                   <span className="text-xs font-bold text-slate-700 uppercase tracking-wide block">
-                    √öltimo Paro Registrado (Historial)
+                    ⁄ltimo Paro Registrado (Historial)
                   </span>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-[11px] font-bold text-gray-650 uppercase mb-2">
-                        Fecha del √öltimo Paro
+                        Fecha del ⁄ltimo Paro
                       </label>
                       <input
                         type="date"
@@ -3297,7 +3323,7 @@ export default function AdminDashboard({
 
                     <div>
                       <label className="block text-[11px] font-bold text-gray-650 uppercase mb-2">
-                        Qui√©n Cubri√≥
+                        QuiÈn CubriÛ
                       </label>
                       <select
                         value={strikeLastCoverId}
@@ -3374,12 +3400,12 @@ export default function AdminDashboard({
                             <div className="flex flex-col gap-1 items-end">
                               {isNext && (
                                 <span className="bg-red-100 text-red-700 font-extrabold text-[8px] uppercase tracking-wider px-2 py-0.5 rounded-full animate-pulse">
-                                  Pr√≥xima Guardia
+                                  PrÛxima Guardia
                                 </span>
                               )}
                               {isLastCover && (
                                 <span className="bg-indigo-100 text-indigo-700 font-extrabold text-[8px] uppercase tracking-wider px-2 py-0.5 rounded-full">
-                                  Cubri√≥ √öltimo
+                                  CubriÛ ⁄ltimo
                                 </span>
                               )}
                             </div>
@@ -3480,7 +3506,7 @@ export default function AdminDashboard({
                 })()}
 
                 <div className="mt-4 p-3 bg-slate-50 rounded-xl border border-slate-150 text-[10px] text-slate-500">
-                  <span className="font-semibold text-slate-750">√öltimo Paro registrado:</span> {strikeConfig.lastDate ? `${strikeConfig.lastDate}` : 'No definido'} cubierto por <strong className="text-slate-800">{employees.find(e => e.id === strikeConfig.lastCoverEmployeeId)?.name || 'Nadie'}</strong>
+                  <span className="font-semibold text-slate-750">⁄ltimo Paro registrado:</span> {strikeConfig.lastDate ? `${strikeConfig.lastDate}` : 'No definido'} cubierto por <strong className="text-slate-800">{employees.find(e => e.id === strikeConfig.lastCoverEmployeeId)?.name || 'Nadie'}</strong>
                 </div>
               </div>
             </div>
@@ -3505,7 +3531,7 @@ export default function AdminDashboard({
                   Cuentas de Usuarios Registradas
                 </h3>
                 <p className="text-xs text-gray-400">
-                  Visualiz√° de forma prolija los usuarios registrados. Pod√©s editar los CUILs directamente, restablecer contrase√±as de forma segura sin exponerlas, y cambiar la jerarqu√≠a de permisos al instante.
+                  Visualiz· de forma prolija los usuarios registrados. PodÈs editar los CUILs directamente, restablecer contraseÒas de forma segura sin exponerlas, y cambiar la jerarquÌa de permisos al instante.
                 </p>
               </div>
 
@@ -3565,17 +3591,17 @@ export default function AdminDashboard({
                               <button
                                 type="button"
                                 onClick={() => {
-                                  const newPass = window.prompt(`Establecer nueva contrase√±a para ${emp.name}:`, "");
+                                  const newPass = window.prompt(`Establecer nueva contraseÒa para ${emp.name}:`, "");
                                   if (newPass !== null) {
                                     if (newPass.trim() === "") {
-                                      triggerAlert('error', 'La contrase√±a no puede estar vac√≠a.');
+                                      triggerAlert('error', 'La contraseÒa no puede estar vacÌa.');
                                       return;
                                     }
                                     onUpdateEmployee({
                                       ...emp,
                                       password: newPass.trim()
                                     });
-                                    triggerAlert('success', `Contrase√±a de ${emp.name} restablecida con √©xito.`);
+                                    triggerAlert('success', `ContraseÒa de ${emp.name} restablecida con Èxito.`);
                                   }
                                 }}
                                 className="px-2 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-705 inline-flex items-center gap-1.5 font-bold rounded-lg text-[10px] cursor-pointer transition-colors"
@@ -3596,7 +3622,7 @@ export default function AdminDashboard({
                                   ...emp,
                                   isAdmin: newAdminStatus
                                 });
-                                triggerAlert('success', `Jerarqu√≠a modificada: ${emp.name} ahora es ${newAdminStatus ? 'Directivo/Admin' : 'Agente Regular'}.`);
+                                triggerAlert('success', `JerarquÌa modificada: ${emp.name} ahora es ${newAdminStatus ? 'Directivo/Admin' : 'Agente Regular'}.`);
                               }}
                               className={`px-2.5 py-1 rounded-full text-[9px] uppercase font-extrabold border transition-all cursor-pointer inline-flex items-center gap-1 ${
                                 emp.isAdmin 
@@ -3605,7 +3631,7 @@ export default function AdminDashboard({
                               }`}
                             >
                               <ShieldAlert className={`w-3 h-3 ${emp.isAdmin ? 'text-rose-600' : 'text-slate-400'}`} />
-                              {emp.isAdmin ? 'Direcci√≥n' : 'Agente'}
+                              {emp.isAdmin ? 'DirecciÛn' : 'Agente'}
                             </button>
                           </td>
 
@@ -3619,7 +3645,7 @@ export default function AdminDashboard({
                                   return;
                                 }
                                 setConfirmDialog({
-                                  message: `¬øEst√°s seguro de que quer√©s eliminar la cuenta de ${emp.name} del sistema? Se perder√°n todos sus datos y no podr√° volver a iniciar sesi√≥n.`,
+                                  message: `øEst·s seguro de que querÈs eliminar la cuenta de ${emp.name} del sistema? Se perder·n todos sus datos y no podr· volver a iniciar sesiÛn.`,
                                   confirmText: 'Eliminar Cuenta',
                                   onConfirm: () => {
                                     if (onDeleteEmployee) {
@@ -3654,7 +3680,7 @@ export default function AdminDashboard({
                   Alta de Nuevo Empleado / Cuenta
                 </h3>
                 <p className="text-xs text-gray-500">
-                  Registr√° un nuevo miembro de la dependencia asignando su CUIL provisorio de acceso, cargo reglamentario y modalidad laboral.
+                  Registr· un nuevo miembro de la dependencia asignando su CUIL provisorio de acceso, cargo reglamentario y modalidad laboral.
                 </p>
               </div>
 
@@ -3666,14 +3692,14 @@ export default function AdminDashboard({
                       type="text"
                       value={newEmpName}
                       onChange={(e) => setNewEmpName(e.target.value)}
-                      placeholder="Ej. Juan Ignacio P√©rez"
+                      placeholder="Ej. Juan Ignacio PÈrez"
                       className="w-full text-xs font-semibold border border-gray-350 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                       required
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1.5">Correo Electr√≥nico (Oficial)</label>
+                    <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1.5">Correo ElectrÛnico (Oficial)</label>
                     <input
                       type="email"
                       value={newEmpEmail}
@@ -3685,7 +3711,7 @@ export default function AdminDashboard({
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1.5">Cargo o Funci√≥n</label>
+                    <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1.5">Cargo o FunciÛn</label>
                     <input
                       type="text"
                       value={newEmpPosition}
@@ -3735,7 +3761,7 @@ export default function AdminDashboard({
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-bold text-gray-600 uppercase mb-2">D√≠as Autorizados para Home office</label>
+                    <label className="block text-[10px] font-bold text-gray-600 uppercase mb-2">DÌas Autorizados para Home office</label>
                     <div className="flex flex-wrap gap-1.5">
                       {DAYS_LIST.map((day) => {
                         const isSelected = newEmpRemote.includes(day);
@@ -3861,7 +3887,7 @@ export default function AdminDashboard({
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Dependencia / √Årea</label>
+                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Dependencia / ¡rea</label>
                     <input
                       type="text"
                       value={currentAdmin.dependency || ''}
@@ -3880,13 +3906,13 @@ export default function AdminDashboard({
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1 flex items-center gap-1.5">
-                      <Key className="w-3.5 h-3.5 text-amber-500" /> Nueva contrase√±a
+                      <Key className="w-3.5 h-3.5 text-amber-500" /> Nueva contraseÒa
                     </label>
                     <input
                       type="password"
                       value={adminProfilePassword}
                       onChange={(e) => setAdminProfilePassword(e.target.value)}
-                      placeholder="Completar solo si quer√©s cambiarla"
+                      placeholder="Completar solo si querÈs cambiarla"
                       className="w-full text-xs font-semibold border border-gray-300 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-slate-900"
                     />
                   </div>

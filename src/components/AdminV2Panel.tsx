@@ -16,6 +16,9 @@ const openSection = (event: React.MouseEvent<HTMLAnchorElement>, section: string
 };
 
 const moduleLabels: Record<string, string> = { AUTH: 'Acceso', PROJECTS: 'Proyectos', LICENSES: 'Licencias', WORK_LOGS: 'Parte diario', EMPLOYEES: 'Empleados', DEPENDENCIES: 'Dependencias', SETTINGS: 'ConfiguraciÃ³n' };
+const splitTechStack = (value?: string) => (value || '').split(/[,;/|]+/).map((item) => item.trim()).filter(Boolean);
+const workLogModeLabel: Record<string, string> = { ONSITE: 'Presencial', REMOTE: 'Remoto', MIXED: 'Mixto', LICENSE: 'Licencia', presencial: 'Presencial', remoto: 'Remoto', mixto: 'Mixto', licencia: 'Licencia' };
+const formatWorkLogDate = (value?: string) => value ? new Date(value).toLocaleDateString('es-AR') : '';
 
 export default function AdminV2Panel() {
   const [tab, setTab] = useState<'summary' | 'audit' | 'exports' | 'settings'>('summary');
@@ -25,15 +28,42 @@ export default function AdminV2Panel() {
 }
 
 function ExecutiveSummary() {
-  const [data, setData] = useState<any>(null); const [error, setError] = useState('');
+  const [data, setData] = useState<any>(null); const [error, setError] = useState(''); const [showAllWorkLogs, setShowAllWorkLogs] = useState(false);
   useEffect(() => { dashboardV2Api.summary().then(setData).catch(() => setError('No se pudo cargar el resumen ejecutivo.')); }, []);
   if (error) return <Empty text={error} />; if (!data) return <Empty text="Cargando resumen..." />;
   const cards = [
-    ['Empleados activos', data.employeesActive, 'empleados'], ['Dependencias activas', data.dependenciesActive, 'dependencias'], ['Partes cargados hoy', data.workLogsToday, 'parte-diario'], ['Partes pendientes hoy', data.workLogsPendingToday, 'parte-diario'], ['Licencias pendientes', data.pendingLicenses, 'licencias'], ['Licencias aprobadas este mes', data.approvedLicensesMonth, 'licencias'], ['Proyectos activos', data.activeProjects, 'proyectos'], ['Proyectos vencidos', data.overdueProjects, 'proyectos'], ['Proyectos prÃ³ximos', data.upcomingProjects, 'proyectos'],
+    ['Empleados activos', data.employeesActive, 'empleados'], ['Dependencias activas', data.dependenciesActive, 'dependencias'], ['Partes cargados hoy', data.workLogsToday, 'parte-diario'], ['Partes pendientes hoy', data.workLogsPendingToday, 'parte-diario'], ['Licencias pendientes', data.pendingLicenses, 'licencias'], ['Licencias aprobadas este mes', data.approvedLicensesMonth, 'licencias'], ['Proyectos activos', data.activeProjects, 'proyectos'], ['Proyectos vencidos', data.overdueProjects, 'proyectos'], ['Proyectos próximos', data.upcomingProjects, 'proyectos'],
   ];
-  return <div className="space-y-6"><section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">{cards.map(([label, value, link]) => <a key={label} href={`${appBasePath()}?seccion=${link}`} onClick={(event) => openSection(event, String(link))} className="rounded-2xl border bg-white p-4 shadow-sm hover:border-indigo-300"><span className="block text-[10px] font-black uppercase text-slate-400">{label}</span><strong className="mt-1 block text-2xl font-black">{value}</strong><span className="text-[10px] font-bold text-indigo-600">Ver detalle</span></a>)}</section><div className="grid gap-5 lg:grid-cols-3"><section className="rounded-2xl border bg-white p-5"><h3 className="font-bold">PrÃ³xima guardia / paro</h3>{data.nextStrikeDuty ? <p className="mt-3 text-sm">{new Date(data.nextStrikeDuty.date).toLocaleDateString('es-AR')}<span className="block text-xs text-slate-500">{data.nextStrikeDuty.notes || 'Sin observaciones'}</span></p> : <p className="mt-3 text-xs text-slate-400">Sin prÃ³xima guardia configurada.</p>}</section><section className="rounded-2xl border bg-white p-5"><h3 className="font-bold">TecnologÃ­as mÃ¡s declaradas</h3><div className="mt-3 space-y-2">{data.technologies?.map((row: any) => <div key={row.name} className="flex justify-between rounded-lg bg-slate-50 px-3 py-2 text-xs"><span>{row.name}</span><b>{row.count}</b></div>)}{!data.technologies?.length && <p className="text-xs text-slate-400">Sin stacks declarados.</p>}</div></section><section className="rounded-2xl border bg-white p-5"><h3 className="font-bold">AuditorÃ­a reciente</h3><div className="mt-3 space-y-2">{data.recentAudit?.map((row: any) => <div key={row.id} className="border-b pb-2 text-xs"><b>{row.title || row.action}</b><span className="block text-[10px] text-slate-400">{row.employeeName || 'Sistema'} Â· {moduleLabels[row.module] || row.module}</span></div>)}{!data.recentAudit?.length && <p className="text-xs text-slate-400">Sin acciones recientes.</p>}</div></section></div></div>;
+  const latestRows = data.latestWorkLogsByEmployee || [];
+  const visibleLatestRows = showAllWorkLogs ? latestRows : latestRows.slice(0, 8);
+  return <div className="space-y-6">
+    <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">{cards.map(([label, value, link]) => <a key={label} href={`${appBasePath()}?seccion=${link}`} onClick={(event) => openSection(event, String(link))} className="rounded-2xl border bg-white p-4 shadow-sm hover:border-indigo-300"><span className="block text-[10px] font-black uppercase text-slate-400">{label}</span><strong className="mt-1 block text-2xl font-black">{value}</strong><span className="text-[10px] font-bold text-indigo-600">Ver detalle</span></a>)}</section>
+    <section className="rounded-2xl border bg-white p-5">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h3 className="font-bold">Últimos partes diarios por empleado</h3>
+        {latestRows.length > 8 && <button type="button" onClick={() => setShowAllWorkLogs((value) => !value)} className="self-start rounded-lg border px-3 py-1 text-[10px] font-bold text-slate-700">{showAllWorkLogs ? 'Ver menos' : 'Ver todos'}</button>}
+      </div>
+      <div className="mt-3 divide-y">
+        {visibleLatestRows.map((row: any) => {
+          const log = row.workLog;
+          const techs = splitTechStack(log?.projectTechStack).slice(0, 4);
+          return <div key={row.employeeId} className="py-3 text-xs">
+            <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+              <div className="min-w-0">
+                <b className="text-slate-900">{row.employeeName}</b>
+                <span className="ml-2 text-[10px] text-slate-400">{row.dependency}</span>
+                {log ? <p className="mt-1 text-slate-600">{formatWorkLogDate(log.date)} · {workLogModeLabel[log.mode] || log.mode} · {log.projectName || log.title}{log.hours ? ` · ${log.hours} h` : ''}{log.entryTime || log.exitTime ? ` · Horario ${log.entryTime || '--:--'} a ${log.exitTime || '--:--'}` : ''}</p> : <p className="mt-1 text-slate-400">Sin parte diario cargado</p>}
+              </div>
+              {techs.length > 0 && <div className="flex max-w-md flex-wrap gap-1">{techs.map((tech: string) => <span key={tech} className="rounded-full border border-indigo-100 bg-indigo-50 px-2 py-0.5 text-[9px] font-bold text-indigo-700">{tech}</span>)}</div>}
+            </div>
+          </div>;
+        })}
+        {!visibleLatestRows.length && <p className="py-5 text-center text-xs text-slate-400">No hay empleados activos para mostrar.</p>}
+      </div>
+    </section>
+    <div className="grid gap-5 lg:grid-cols-3"><section className="rounded-2xl border bg-white p-5"><h3 className="font-bold">Próxima guardia / paro</h3>{data.nextStrikeDuty ? <p className="mt-3 text-sm">{new Date(data.nextStrikeDuty.date).toLocaleDateString('es-AR')}<span className="block text-xs text-slate-500">{data.nextStrikeDuty.notes || 'Sin observaciones'}</span></p> : <p className="mt-3 text-xs text-slate-400">Sin próxima guardia configurada.</p>}</section><section className="rounded-2xl border bg-white p-5"><h3 className="font-bold">Tecnologías más declaradas</h3><div className="mt-3 flex flex-wrap gap-2">{data.technologies?.map((row: any) => <span key={row.name} className="rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-700">{row.name} <b className="text-indigo-900">{row.count}</b></span>)}{!data.technologies?.length && <p className="text-xs text-slate-400">Sin stacks declarados.</p>}</div></section><section className="rounded-2xl border bg-white p-5"><h3 className="font-bold">Auditoría reciente</h3><div className="mt-3 space-y-2">{data.recentAudit?.map((row: any) => <div key={row.id} className="border-b pb-2 text-xs"><b>{row.title || row.action}</b><span className="block text-[10px] text-slate-400">{row.employeeName || 'Sistema'} · {moduleLabels[row.module] || row.module}</span></div>)}{!data.recentAudit?.length && <p className="text-xs text-slate-400">Sin acciones recientes.</p>}</div></section></div>
+  </div>;
 }
-
 function AuditView() {
   const [filters, setFilters] = useState({ q: '', module: '', action: '', userId: '', employeeId: '', from: '', to: '', pageSize: 10 }); const [page, setPage] = useState(1); const [data, setData] = useState<any>(null); const [loading, setLoading] = useState(false);
   const load = () => { setLoading(true); auditApi.all({ ...filters, page }).then(setData).finally(() => setLoading(false)); };

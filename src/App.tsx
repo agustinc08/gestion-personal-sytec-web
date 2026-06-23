@@ -251,6 +251,7 @@ export default function App() {
     const saved = await employeesApi.create(empData);
     setEmployees((prev) => [...prev, saved]);
     void refreshData(undefined, { silent: true });
+    return saved;
   };
 
   const handleCreateDependency = async (payload: Partial<Dependency> & { name: string }) => {

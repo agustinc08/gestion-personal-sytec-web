@@ -296,6 +296,7 @@ export default function AdminDashboard({
   const [newEmpDependency, setNewEmpDependency] = useState(dependencies[0]?.id || '');
   const [newEmpTotalDays, setNewEmpTotalDays] = useState(0);
   const [newEmpRemote, setNewEmpRemote] = useState<string[]>([]);
+  const [isCreatingEmployee, setIsCreatingEmployee] = useState(false);
 
   // States for Editing Employee Profile
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -838,38 +839,55 @@ export default function AdminDashboard({
     triggerAlert('success', '¡Planes del próximo paro y guardia de contingencia sincronizados con éxito!');
   };
 
-  const handleCreateEmployee = (e: React.FormEvent) => {
+  const handleCreateEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newEmpName.trim() || !newEmpEmail.trim() || !newEmpCuil.trim() || !newEmpPassword.trim()) {
+    const name = newEmpName.trim();
+    const email = newEmpEmail.trim();
+    const cuil = newEmpCuil.trim();
+    const password = newEmpPassword.trim();
+    if (!name || !email || !cuil || !password) {
       triggerAlert('error', 'Por favor completa todos los campos requeridos (Nombre, E-mail, CUIL y Clave Provisoria).');
       return;
     }
+    if (!newEmpDependency) {
+      triggerAlert('error', 'Selecciona una dependencia para crear la cuenta.');
+      return;
+    }
 
-    onAddEmployee({
-      name: newEmpName,
-      email: newEmpEmail,
-      dependencyId: newEmpDependency,
-      dependency: dependencies.find((dependency) => dependency.id === newEmpDependency)?.name || 'Sin dependencia',
-      position: newEmpPosition || 'Oficial',
-      totalLicenseDays: newEmpTotalDays,
-      licenseDaysTaken: 0,
-      guardiasDone: 0,
-      remoteDaysAssigned: newEmpRemote,
-      cuil: newEmpCuil,
-      password: newEmpPassword,
-      mustChangePassword: true, // First login will require changing it!
-    });
+    setIsCreatingEmployee(true);
+    try {
+      const saved = await Promise.resolve(onAddEmployee({
+        name,
+        email,
+        dependencyId: newEmpDependency,
+        dependency: dependencies.find((dependency) => dependency.id === newEmpDependency)?.name || '',
+        position: newEmpPosition.trim() || 'Oficial',
+        totalLicenseDays: newEmpTotalDays,
+        licenseDaysTaken: 0,
+        guardiasDone: 0,
+        remoteDaysAssigned: newEmpRemote,
+        cuil,
+        password,
+        mustChangePassword: true,
+      }));
 
-    setNewEmpName('');
-    setNewEmpEmail('');
-    setNewEmpPosition('');
-    setNewEmpCuil('');
-    setNewEmpPassword('');
-    setNewEmpTotalDays(0);
-    setNewEmpRemote([]);
-    triggerAlert('success', `Empleado "${newEmpName}" con CUIL ${newEmpCuil} dado de alta con éxito con contraseña temporaria.`);
+      setEmployeeDependencyFilter('todas');
+      if (saved?.id) setSelectedEmployeeId(saved.id);
+      setNewEmpName('');
+      setNewEmpEmail('');
+      setNewEmpPosition('');
+      setNewEmpCuil('');
+      setNewEmpPassword('');
+      setNewEmpTotalDays(0);
+      setNewEmpRemote([]);
+      triggerAlert('success', `Empleado "${name}" con CUIL ${cuil} dado de alta con exito con contrasena temporaria.`);
+    } catch (error: any) {
+      const message = error?.response?.data?.message;
+      triggerAlert('error', Array.isArray(message) ? message.join(' ') : message || 'No se pudo dar de alta el empleado. Revisa los datos e intenta nuevamente.');
+    } finally {
+      setIsCreatingEmployee(false);
+    }
   };
-
   const handleSaveAdminSelfProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     const fullName = `${adminProfileFirstName} ${adminProfileLastName}`.trim();
@@ -2659,9 +2677,6 @@ export default function AdminDashboard({
                       </div>
 
                     </div>
-
-                    <div className="lg:col-span-12"><ProjectComments projectId={selectedProj.id} /></div>
-
                     {/* Right side combined timeline feed */}
                     <div className="lg:col-span-7 bg-white p-6 rounded-2xl border border-gray-150 shadow-sm">
                       <div className="flex items-center justify-between border-b pb-3.5 mb-5">
@@ -2751,6 +2766,8 @@ export default function AdminDashboard({
                         </div>
                       )}
                     </div>
+
+                    <div className="lg:col-span-12"><ProjectComments projectId={selectedProj.id} /></div>
 
                   </div>
                 </div>
@@ -3758,8 +3775,9 @@ export default function AdminDashboard({
                       value={newEmpDependency}
                       onChange={(e) => setNewEmpDependency(e.target.value)}
                       className="w-full text-xs bg-white border border-gray-355 rounded-xl px-3 py-2.5"
+                      required
                     >
-                      <option value="">Sin dependencia asignada</option>
+                      <option value="">Seleccionar dependencia</option>
                       {dependencies.filter((dependency) => dependency.isActive).map((dependency) => (
                         <option key={dependency.id} value={dependency.id}>{dependency.name}</option>
                       ))}
@@ -3792,9 +3810,10 @@ export default function AdminDashboard({
 
                 <button
                   type="submit"
-                  className="w-full cursor-pointer bg-slate-950 hover:bg-indigo-700 text-white font-bold text-xs py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 mt-4"
+                  disabled={isCreatingEmployee}
+                  className="w-full cursor-pointer bg-slate-950 hover:bg-indigo-700 disabled:bg-slate-400 disabled:cursor-not-allowed text-white font-bold text-xs py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 mt-4"
                 >
-                  <Plus className="w-4 h-4" /> Dar de Alta Agente en Sistemas
+                  <Plus className="w-4 h-4" /> {isCreatingEmployee ? 'Creando cuenta...' : 'Dar de Alta Agente en Sistemas'}
                 </button>
               </form>
             </div>

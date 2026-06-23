@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Activity, Download, FileText, Gauge, Settings, ShieldCheck } from 'lucide-react';
+import { Activity, Download, FileText, Gauge, RefreshCw, Settings, ShieldCheck } from 'lucide-react';
 import { auditApi, dashboardV2Api, downloadExport, settingsApi } from '../api/v2.api';
 
 const appBasePath = () => {
@@ -28,8 +28,9 @@ export default function AdminV2Panel() {
 }
 
 function ExecutiveSummary() {
-  const [data, setData] = useState<any>(null); const [error, setError] = useState(''); const [showAllWorkLogs, setShowAllWorkLogs] = useState(false);
-  useEffect(() => { dashboardV2Api.summary().then(setData).catch(() => setError('No se pudo cargar el resumen ejecutivo.')); }, []);
+  const [data, setData] = useState<any>(null); const [error, setError] = useState(''); const [showAllWorkLogs, setShowAllWorkLogs] = useState(false); const [refreshing, setRefreshing] = useState(false);
+  const load = (silent = false) => { if (!silent) setRefreshing(true); return dashboardV2Api.summary().then((rows) => { setData(rows); setError(''); }).catch(() => setError('No se pudo cargar el resumen ejecutivo.')).finally(() => { if (!silent) setRefreshing(false); }); };
+  useEffect(() => { load(); const onRefresh = () => load(true); window.addEventListener('sytec:refreshed', onRefresh); const intervalId = window.setInterval(() => load(true), 60000); return () => { window.removeEventListener('sytec:refreshed', onRefresh); window.clearInterval(intervalId); }; }, []);
   if (error) return <Empty text={error} />; if (!data) return <Empty text="Cargando resumen..." />;
   const cards = [
     ['Empleados activos', data.employeesActive, 'empleados'], ['Dependencias activas', data.dependenciesActive, 'dependencias'], ['Partes cargados hoy', data.workLogsToday, 'parte-diario'], ['Partes pendientes hoy', data.workLogsPendingToday, 'parte-diario'], ['Licencias pendientes', data.pendingLicenses, 'licencias'], ['Licencias aprobadas este mes', data.approvedLicensesMonth, 'licencias'], ['Proyectos activos', data.activeProjects, 'proyectos'], ['Proyectos vencidos', data.overdueProjects, 'proyectos'], ['Proyectos próximos', data.upcomingProjects, 'proyectos'],
@@ -40,8 +41,8 @@ function ExecutiveSummary() {
     <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">{cards.map(([label, value, link]) => <a key={label} href={`${appBasePath()}?seccion=${link}`} onClick={(event) => openSection(event, String(link))} className="rounded-2xl border bg-white p-4 shadow-sm hover:border-indigo-300"><span className="block text-[10px] font-black uppercase text-slate-400">{label}</span><strong className="mt-1 block text-2xl font-black">{value}</strong><span className="text-[10px] font-bold text-indigo-600">Ver detalle</span></a>)}</section>
     <section className="rounded-2xl border bg-white p-5">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <h3 className="font-bold">Últimos partes diarios por empleado</h3>
-        {latestRows.length > 8 && <button type="button" onClick={() => setShowAllWorkLogs((value) => !value)} className="self-start rounded-lg border px-3 py-1 text-[10px] font-bold text-slate-700">{showAllWorkLogs ? 'Ver menos' : 'Ver todos'}</button>}
+<h3 className="font-bold">Últimos partes diarios por empleado</h3><div className="flex flex-wrap gap-2"><button type="button" onClick={() => load()} disabled={refreshing} className="self-start rounded-lg border px-3 py-1 text-[10px] font-bold text-slate-700 disabled:opacity-60"><RefreshCw className={`mr-1 inline h-3 w-3 ${refreshing ? 'animate-spin' : ''}`} />Actualizar</button>
+        {latestRows.length > 8 && <button type="button" onClick={() => setShowAllWorkLogs((value) => !value)} className="self-start rounded-lg border px-3 py-1 text-[10px] font-bold text-slate-700">{showAllWorkLogs ? 'Ver menos' : 'Ver todos'}</button>}</div>
       </div>
       <div className="mt-3 divide-y">
         {visibleLatestRows.map((row: any) => {

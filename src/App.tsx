@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Briefcase, CircleHelp, LogOut, RefreshCw, User } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { CircleHelp, LogOut, RefreshCw, User } from 'lucide-react';
 import { employeesApi } from './api/employees.api';
 import { licensesApi } from './api/licenses.api';
 import { licenseArticlesApi } from './api/licenseArticles.api';
@@ -58,32 +58,41 @@ export default function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const refreshInFlight = useRef(false);
 
-  const refreshData = async (user = currentUser) => {
-    if (!user) return;
-    const isAdmin = user.role === 'ADMIN';
-    const [employeeRows, projectRows, licenseRows, workLogRows, rules, articleRows, strike, dependencyRows, announcementRows] = await Promise.all([
-      isAdmin ? employeesApi.all() : employeesApi.me().then((me) => [me]),
-      isAdmin ? projectsApi.all() : projectsApi.my(),
-      isAdmin ? licensesApi.all() : licensesApi.my(),
-      isAdmin ? worklogsApi.all() : worklogsApi.my(),
-      licensesApi.rules().catch(() => LAWS_ARTICLES_RULES),
-      licensesApi.rules().then(() => licenseArticlesApi.all(isAdmin)).catch(() => []),
-      strikeApi.config(),
-      isAdmin ? dependenciesApi.all() : Promise.resolve([]),
-      announcementsApi.active().catch(() => []),
-    ]);
-    setEmployees(employeeRows);
-    setProjects(projectRows);
-    setLicenseRequests(licenseRows);
-    setWorkLogs(workLogRows);
-    setLicenseRules(rules);
-    setLicenseArticles(articleRows);
-    setStrikeConfig(strike);
-    if (isAdmin) setDependencies(dependencyRows);
-    setAnnouncements(announcementRows);
-  };
-
+  const refreshData = useCallback(async (user = currentUser, options: { silent?: boolean } = {}) => {
+    if (!user || refreshInFlight.current) return;
+    refreshInFlight.current = true;
+    if (!options.silent) setIsRefreshing(true);
+    try {
+      const isAdmin = user.role === 'ADMIN';
+      const [employeeRows, projectRows, licenseRows, workLogRows, rules, articleRows, strike, dependencyRows, announcementRows] = await Promise.all([
+        isAdmin ? employeesApi.all() : employeesApi.me().then((me) => [me]),
+        isAdmin ? projectsApi.all() : projectsApi.my(),
+        isAdmin ? licensesApi.all() : licensesApi.my(),
+        isAdmin ? worklogsApi.all() : worklogsApi.my(),
+        licensesApi.rules().catch(() => LAWS_ARTICLES_RULES),
+        licensesApi.rules().then(() => licenseArticlesApi.all(isAdmin)).catch(() => []),
+        strikeApi.config(),
+        isAdmin ? dependenciesApi.all() : Promise.resolve([]),
+        announcementsApi.active().catch(() => []),
+      ]);
+      setEmployees(employeeRows);
+      setProjects(projectRows);
+      setLicenseRequests(licenseRows);
+      setWorkLogs(workLogRows);
+      setLicenseRules(rules);
+      setLicenseArticles(articleRows);
+      setStrikeConfig(strike);
+      if (isAdmin) setDependencies(dependencyRows);
+      setAnnouncements(announcementRows);
+      window.dispatchEvent(new CustomEvent('sytec:refreshed'));
+    } finally {
+      refreshInFlight.current = false;
+      if (!options.silent) setIsRefreshing(false);
+    }
+  }, [currentUser]);
   useEffect(() => {
     async function bootstrap() {
       try {
@@ -98,6 +107,16 @@ export default function App() {
     }
     bootstrap();
   }, []);
+  useEffect(() => {
+    if (!currentUser) return;
+    const refresh = () => { void refreshData(undefined, { silent: true }); };
+    window.addEventListener('sytec:refresh', refresh);
+    const intervalId = window.setInterval(refresh, 60000);
+    return () => {
+      window.removeEventListener('sytec:refresh', refresh);
+      window.clearInterval(intervalId);
+    };
+  }, [currentUser, refreshData]);
 
   const processedEmployees = useMemo(() => {
     return employees.map((emp) => {
@@ -114,6 +133,7 @@ export default function App() {
 
   const currentEmployee = processedEmployees.find((e) => e.id === currentUser?.employeeId) || processedEmployees[0] || null;
   const currentRole = currentUser?.role === 'ADMIN' ? 'admin' : 'employee';
+  const appIconUrl = `${import.meta.env.BASE_URL || '/'}icon.svg`;
 
   const handleLogin = async (cuil: string, password: string) => {
     const session = await authApi.login(cuil, password);
@@ -136,6 +156,7 @@ export default function App() {
       ? await employeesApi.updateMe(selfProfilePayload)
       : await employeesApi.update(updatedEmp.id, password ? { ...employeePayload, password } : employeePayload);
     setEmployees((prev) => prev.map((emp) => (emp.id === saved.id ? saved : emp)));
+    void refreshData(undefined, { silent: true });
     if (saved.id === currentUser?.employeeId) {
       setCurrentUser((prev: any) => prev ? { ...prev, email: saved.email } : prev);
     }
@@ -145,23 +166,27 @@ export default function App() {
   const handleAddWorkLog = async (newLogData: Omit<WorkLog, 'id'>) => {
     const saved = await worklogsApi.create(newLogData);
     setWorkLogs((prev) => [saved, ...prev]);
+    void refreshData(undefined, { silent: true });
     return saved;
   };
 
   const handleUpdateWorkLog = async (id: string, payload: Partial<WorkLog>) => {
     const saved = await worklogsApi.update(id, payload);
     setWorkLogs((prev) => prev.map((log) => log.id === saved.id ? saved : log));
+    void refreshData(undefined, { silent: true });
     return saved;
   };
 
   const handleAddLicenseRequest = async (newReqData: Omit<LicenseRequest, 'id' | 'status' | 'dateRequested'>) => {
     const saved = await licensesApi.create(newReqData);
     setLicenseRequests((prev) => [saved, ...prev]);
+    void refreshData(undefined, { silent: true });
   };
 
   const handleAddProject = async (newProjData: Omit<Project, 'id' | 'status'>) => {
     const saved = await projectsApi.create(newProjData);
     setProjects((prev) => [...prev, saved]);
+    void refreshData(undefined, { silent: true });
   };
 
   const handleUpdateProject = async (updatedProj: Project) => {
@@ -185,6 +210,7 @@ export default function App() {
     };
     const saved = await projectsApi.update(updatedProj.id, payload);
     setProjects((prev) => prev.map((p) => (p.id === saved.id ? saved : p)));
+    void refreshData(undefined, { silent: true });
     return saved;
   };
 
@@ -195,12 +221,14 @@ export default function App() {
       authorName: currentUser?.role === 'ADMIN' ? 'Administración' : currentEmployee?.name || 'Empleado',
     });
     setProjects((prev) => prev.map((p) => (p.id === saved.id ? saved : p)));
+    void refreshData(undefined, { silent: true });
     return saved;
   };
 
   const handleDeleteProject = async (id: string) => {
     await projectsApi.remove(id);
     setProjects((prev) => prev.filter((project) => project.id !== id));
+    void refreshData(undefined, { silent: true });
   };
 
   const handleAddDeployment = async (projectId: string, payload: any) => {
@@ -216,11 +244,13 @@ export default function App() {
   const handleAddManualLicense = async (reqData: Omit<LicenseRequest, 'id' | 'status' | 'dateRequested'> & { status: 'pendiente' | 'aprobado' }) => {
     const saved = await licensesApi.create(reqData);
     setLicenseRequests((prev) => [saved, ...prev]);
+    void refreshData(undefined, { silent: true });
   };
 
   const handleAddEmployee = async (empData: any) => {
     const saved = await employeesApi.create(empData);
     setEmployees((prev) => [...prev, saved]);
+    void refreshData(undefined, { silent: true });
   };
 
   const handleCreateDependency = async (payload: Partial<Dependency> & { name: string }) => {
@@ -236,21 +266,25 @@ export default function App() {
   const handleApproveRejectRequest = async (reqId: string, targetStatus: 'aprobado' | 'rechazado') => {
     const saved = targetStatus === 'aprobado' ? await licensesApi.approve(reqId) : await licensesApi.reject(reqId);
     setLicenseRequests((prev) => prev.map((req) => (req.id === saved.id ? saved : req)));
+    void refreshData(undefined, { silent: true });
   };
 
   const handleUpdateLicenseRequest = async (updatedReq: LicenseRequest) => {
     const saved = await licensesApi.update(updatedReq.id, updatedReq);
     setLicenseRequests((prev) => prev.map((req) => (req.id === saved.id ? saved : req)));
+    void refreshData(undefined, { silent: true });
   };
 
   const handleDeleteLicenseRequest = async (id: string) => {
     await licensesApi.remove(id);
     setLicenseRequests((prev) => prev.filter((req) => req.id !== id));
+    void refreshData(undefined, { silent: true });
   };
 
   const handleClearLicenses = async () => {
     await licensesApi.clear();
     setLicenseRequests([]);
+    void refreshData(undefined, { silent: true });
   };
 
   const handleCreateLicenseArticle = async (payload: Partial<LicenseArticle>) => {
@@ -296,6 +330,7 @@ export default function App() {
   const handleDeleteEmployee = async (id: string) => {
     await employeesApi.remove(id);
     setEmployees((prev) => prev.filter((emp) => emp.id !== id));
+    void refreshData(undefined, { silent: true });
   };
 
   const handleUpdateAvatar = async (employeeId: string, avatarUrl: string | File) => {
@@ -319,12 +354,14 @@ export default function App() {
   const handleAdjustCompensatoryDays = async (employeeId: string, days: number) => {
     const saved = await employeesApi.adjustCompensatoryDays(employeeId, days);
     setEmployees((prev) => prev.map((item) => item.id === saved.id ? saved : item));
+    void refreshData(undefined, { silent: true });
     return saved;
   };
 
   const handleUpdateStrikeConfig = async (newConfig: StrikeConfig) => {
     const saved = await strikeApi.updateConfig(newConfig);
     setStrikeConfig(saved);
+    void refreshData(undefined, { silent: true });
   };
 
   const handleSwapStrikeDutyOrders = async (empIdA: string, empIdB: string) => {
@@ -336,6 +373,7 @@ export default function App() {
       employeesApi.update(empB.id, { ...empB, strikeDutyOrder: empA.strikeDutyOrder }),
     ]);
     setEmployees((prev) => prev.map((emp) => (emp.id === savedA.id ? savedA : emp.id === savedB.id ? savedB : emp)));
+    void refreshData(undefined, { silent: true });
   };
 
   const handleLogout = () => {
@@ -345,6 +383,7 @@ export default function App() {
     setProjects([]);
     setWorkLogs([]);
     setLicenseRequests([]);
+    void refreshData(undefined, { silent: true });
   };
 
   const handleChangePassword = async (currentPassword: string, newPassword: string) => {
@@ -399,7 +438,7 @@ export default function App() {
       <header className="bg-white border-b border-gray-200 py-6 px-4 md:px-8 shadow-sm">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div className="flex items-center gap-3">
-            <div className="bg-slate-950 p-2.5 rounded-2xl text-white shadow-md"><Briefcase className="w-6 h-6" /></div>
+            <div className="bg-slate-950 p-2 rounded-2xl text-white shadow-md"><img src={appIconUrl} alt="Gestión SyTec" className="h-8 w-8 rounded-xl" /></div>
             <div>
               <h1 className="text-xl font-bold text-gray-900 tracking-tight">Área de Desarrollo</h1>
               <span className="text-xs text-slate-500 font-medium font-sans">Poder Judicial de la Nación - Secretaría de Informática - Oficina de Sistemas y Tecnología (SyTec)</span>
@@ -454,6 +493,7 @@ export default function App() {
             onGenerateArticlePdf={handleGenerateArticlePdf}
             remindedEmpIds={remindedEmpIds}
             setRemindedEmpIds={setRemindedEmpIds}
+            onRefresh={() => refreshData()}
           />
         ) : (
           <EmployeeDashboard
@@ -474,6 +514,7 @@ export default function App() {
             onUpdateEmployee={handleUpdateEmployee}
             onChangePassword={handleChangePassword}
             remindedEmpIds={remindedEmpIds}
+            onRefresh={() => refreshData()}
           />
         )}
       </main>

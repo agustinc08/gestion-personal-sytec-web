@@ -5,7 +5,7 @@ import { activityTypeLabel, deploymentEnvironmentLabel, deploymentStatusLabel, d
 import { 
   Users, Calendar, Briefcase, Plus, Check, X, FileText, 
   User, ShieldAlert, Award, AlertCircle, FilePlus, ChevronRight, Settings, ArrowRight, Trash2, Key, ArrowUpDown,
-  ArrowLeft, History, MessageSquare, Send, BarChart3, Upload
+  ArrowLeft, History, MessageSquare, Send, BarChart3, Upload, RefreshCw
 } from 'lucide-react';
 import ProjectComments from './ProjectComments';
 import { Pagination, usePagination } from './Pagination';
@@ -52,6 +52,7 @@ interface AdminDashboardProps {
   onGenerateArticlePdf?: (articleId: string, values: Record<string, string>) => Promise<string> | void;
   remindedEmpIds: string[];
   setRemindedEmpIds: React.Dispatch<React.SetStateAction<string[]>>;
+  onRefresh?: () => void;
 }
 
 export default function AdminDashboard({
@@ -93,6 +94,7 @@ export default function AdminDashboard({
   onGenerateArticlePdf,
   remindedEmpIds,
   setRemindedEmpIds,
+  onRefresh,
 }: AdminDashboardProps) {
   const initialAdminTab = () => {
     const section = new URLSearchParams(window.location.search).get('seccion');
@@ -1055,7 +1057,7 @@ export default function AdminDashboard({
       )}
 
       {/* Admin Tabs */}
-      <div className="flex flex-wrap border-b border-gray-200 mb-8 gap-x-2 gap-y-1">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 mb-8"><div className="flex flex-wrap gap-x-2 gap-y-1">
         <button onClick={() => setAdminTab('v2')} className={`px-5 py-3 font-semibold text-sm border-b-2 flex items-center gap-2 ${adminTab === 'v2' ? 'border-red-600 text-red-600 font-bold' : 'border-transparent text-gray-500 hover:text-gray-900'}`}><BarChart3 className="h-4 w-4" /> Panel ejecutivo</button>
         <button onClick={() => setAdminTab('announcements')} className={`px-5 py-3 font-semibold text-sm border-b-2 flex items-center gap-2 ${adminTab === 'announcements' ? 'border-red-600 text-red-600 font-bold' : 'border-transparent text-gray-500 hover:text-gray-900'}`}><MessageSquare className="h-4 w-4" /> Comunicados</button>
         <button
@@ -1144,6 +1146,8 @@ export default function AdminDashboard({
           <User className="w-4 h-4 text-emerald-500" />
           Mi Perfil
         </button>
+      </div>
+      {onRefresh && <button type="button" onClick={onRefresh} className="mb-2 rounded-xl border bg-white px-3 py-2 text-xs font-bold text-slate-700 inline-flex items-center gap-2"><RefreshCw className="h-3.5 w-3.5 text-indigo-600" />Actualizar</button>}
       </div>
 
       {/* Main Admin Contents */}

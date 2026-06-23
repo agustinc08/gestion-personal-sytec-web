@@ -5,7 +5,7 @@ import { activityTypeLabel, deploymentEnvironmentLabel, deploymentStatusLabel, d
 import {
   Calendar, CheckCircle, FileText, User, Briefcase, Plus, Clock, 
   MapPin, ShieldAlert, Upload, Download, CheckCircle2, ChevronRight, AlertCircle, FileSpreadsheet,
-  ArrowLeft, History, MessageSquare, Send, BarChart3
+  ArrowLeft, History, MessageSquare, Send, BarChart3, RefreshCw
 } from 'lucide-react';
 import ProjectComments from './ProjectComments';
 import { Pagination, usePagination } from './Pagination';
@@ -28,6 +28,7 @@ interface EmployeeDashboardProps {
   onUpdateEmployee: (emp: Employee) => void;
   onChangePassword?: (currentPassword: string, newPassword: string) => Promise<void>;
   remindedEmpIds?: string[];
+  onRefresh?: () => void;
 }
 
 export default function EmployeeDashboard({
@@ -48,6 +49,7 @@ export default function EmployeeDashboard({
   onUpdateEmployee,
   onChangePassword,
   remindedEmpIds = [],
+  onRefresh,
 }: EmployeeDashboardProps) {
   const initialActiveTab = () => {
     const section = new URLSearchParams(window.location.search).get('seccion');
@@ -532,7 +534,7 @@ export default function EmployeeDashboard({
       </div>
 
       {/* Internal Tabs Switcher */}
-      <div className="flex border-b border-gray-200 mb-8 overflow-x-auto scrollbar-none gap-2">
+      <div className="flex flex-col gap-3 border-b border-gray-200 mb-8 lg:flex-row lg:items-center lg:justify-between"><div className="flex overflow-x-auto scrollbar-none gap-2">
         <button
           onClick={() => setActiveTab('carga_diaria')}
           className={`px-5 py-3 font-semibold text-sm border-b-2 flex items-center gap-2 whitespace-nowrap transition-all duration-200 ${
@@ -588,6 +590,8 @@ export default function EmployeeDashboard({
           <User className="w-4 h-4" />
           Mi Perfil ({employee.dependency})
         </button>
+      </div>
+        {onRefresh && <button type="button" onClick={onRefresh} className="mb-2 self-start rounded-xl border bg-white px-3 py-2 text-xs font-bold text-slate-700 inline-flex items-center gap-2 lg:self-auto"><RefreshCw className="h-3.5 w-3.5 text-indigo-600" />Actualizar</button>}
       </div>
 
       {/* Main Content Areas */}

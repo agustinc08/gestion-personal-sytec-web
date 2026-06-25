@@ -364,8 +364,8 @@ export default function EmployeeDashboard({
         mode: logMode,
         activityType: logActivityType,
         hours: logHours ? Number(logHours) : undefined,
-        entryTime: logEntryTime || '',
-        exitTime: logExitTime || '',
+        ...(logEntryTime ? { entryTime: logEntryTime } : {}),
+        ...(logExitTime ? { exitTime: logExitTime } : {}),
       };
       if (editingWorkLogId) await onUpdateWorkLog(editingWorkLogId, payload);
       else await Promise.resolve(onAddWorkLog(payload));

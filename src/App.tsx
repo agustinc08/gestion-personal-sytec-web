@@ -163,15 +163,22 @@ export default function App() {
     return saved;
   };
 
+  const cleanWorkLogTimePayload = <T extends Partial<WorkLog>>(payload: T): T => {
+    const cleaned = { ...payload };
+    if (cleaned.entryTime === '') delete cleaned.entryTime;
+    if (cleaned.exitTime === '') delete cleaned.exitTime;
+    return cleaned;
+  };
+
   const handleAddWorkLog = async (newLogData: Omit<WorkLog, 'id'>) => {
-    const saved = await worklogsApi.create(newLogData);
+    const saved = await worklogsApi.create(cleanWorkLogTimePayload(newLogData));
     setWorkLogs((prev) => [saved, ...prev]);
     void refreshData(undefined, { silent: true });
     return saved;
   };
 
   const handleUpdateWorkLog = async (id: string, payload: Partial<WorkLog>) => {
-    const saved = await worklogsApi.update(id, payload);
+    const saved = await worklogsApi.update(id, cleanWorkLogTimePayload(payload));
     setWorkLogs((prev) => prev.map((log) => log.id === saved.id ? saved : log));
     void refreshData(undefined, { silent: true });
     return saved;

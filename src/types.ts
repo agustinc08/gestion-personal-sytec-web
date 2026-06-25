@@ -17,6 +17,26 @@ export interface Employee {
   isAdmin?: boolean; // Bandera para saber si es administrador/directivo
 }
 
+
+export interface CreateEmployeePayload {
+  name: string;
+  email: string;
+  dependencyId?: string;
+  dependency?: string;
+  position?: string;
+  cuil: string;
+  password: string;
+  totalLicenseDays?: number;
+  strikeDutyOrder?: number;
+  remoteDaysAssigned?: string[];
+  mustChangePassword?: boolean;
+}
+
+export type UpdateEmployeePayload = Partial<Omit<CreateEmployeePayload, 'password'> & {
+  avatar: string;
+  password: string;
+  isAdmin: boolean;
+}>;
 export interface WorkLog {
   id: string;
   employeeId: string;

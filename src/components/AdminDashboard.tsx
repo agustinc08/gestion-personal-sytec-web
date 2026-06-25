@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { statisticsApi } from '../api/statistics.api';
-import { Dependency, Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, LicenseArticle, ActivityType, StatisticsResponse } from '../types';
+import { CreateEmployeePayload, Dependency, Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, LicenseArticle, ActivityType, StatisticsResponse } from '../types';
 import { activityTypeLabel, deploymentEnvironmentLabel, deploymentStatusLabel, difficultyLabel, licenseStatusLabel, projectStatusLabel, statColumnLabel } from '../utils/labels';
 import { 
   Users, Calendar, Briefcase, Plus, Check, X, FileText, 
@@ -34,7 +34,7 @@ interface AdminDashboardProps {
   onAddProjectUpdate?: (projectId: string, update: string | (Partial<ProjectUpdate> & { content: string })) => Promise<Project> | void;
   onAddDeployment?: (projectId: string, payload: any) => Promise<any> | void;
   onAddManualLicense: (req: Omit<LicenseRequest, 'id' | 'status' | 'dateRequested'> & { status: 'pendiente' | 'aprobado' }) => any;
-  onAddEmployee: (emp: any) => any;
+  onAddEmployee: (emp: CreateEmployeePayload) => any;
   onUpdateEmployee: (emp: Employee) => Promise<Employee> | void;
   onUpdateAvatar?: (employeeId: string, avatar: string | File) => Promise<Employee> | void;
   onSwapStrikeDutyOrders?: (empIdA: string, empIdB: string) => void;
@@ -863,8 +863,6 @@ export default function AdminDashboard({
         dependency: dependencies.find((dependency) => dependency.id === newEmpDependency)?.name || '',
         position: newEmpPosition.trim() || 'Oficial',
         totalLicenseDays: newEmpTotalDays,
-        licenseDaysTaken: 0,
-        guardiasDone: 0,
         remoteDaysAssigned: newEmpRemote,
         cuil,
         password,

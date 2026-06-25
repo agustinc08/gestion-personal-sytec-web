@@ -18,7 +18,7 @@ import HelpPanel from './components/HelpPanel';
 import AnnouncementBanner from './components/AnnouncementBanner';
 import { APP_NAME, APP_UPDATED_AT, APP_VERSION } from './config/app';
 import { DEPENDENCIES, INITIAL_STRIKE_CONFIG, LAWS_ARTICLES_RULES } from './data/mockData';
-import { Announcement, Dependency, Employee, LicenseArticle, LicenseRequest, LicenseRule, Project, ProjectUpdate, StrikeConfig, WorkLog } from './types';
+import { Announcement, CreateEmployeePayload, Dependency, Employee, LicenseArticle, LicenseRequest, LicenseRule, Project, ProjectUpdate, StrikeConfig, UpdateEmployeePayload, WorkLog } from './types';
 
 function SessionAvatar({ src, name }: { src?: string; name: string }) {
   const [imageFailed, setImageFailed] = useState(false);
@@ -142,19 +142,35 @@ export default function App() {
     return session.user;
   };
 
+  const cleanEmployeeUpdatePayload = (employee: Partial<Employee>): UpdateEmployeePayload => {
+    const password = employee.password?.trim();
+    return {
+      name: employee.name,
+      email: employee.email,
+      avatar: employee.avatar,
+      dependency: employee.dependency,
+      dependencyId: employee.dependencyId,
+      position: employee.position,
+      cuil: employee.cuil,
+      totalLicenseDays: employee.totalLicenseDays,
+      strikeDutyOrder: employee.strikeDutyOrder,
+      remoteDaysAssigned: employee.remoteDaysAssigned,
+      mustChangePassword: employee.mustChangePassword,
+      isAdmin: employee.isAdmin,
+      ...(password ? { password } : {}),
+    };
+  };
+
   const handleUpdateEmployee = async (updatedEmp: Employee) => {
-    const password = updatedEmp.password?.trim();
-    const selfProfilePayload = {
+    const selfProfilePayload: UpdateEmployeePayload = {
       name: updatedEmp.name,
       email: updatedEmp.email,
       avatar: updatedEmp.avatar,
-      ...(password ? { password } : {}),
+      ...(updatedEmp.password?.trim() ? { password: updatedEmp.password.trim() } : {}),
     };
-    const employeePayload: Partial<Employee> = { ...updatedEmp };
-    delete employeePayload.password;
     const saved = updatedEmp.id === currentUser?.employeeId
       ? await employeesApi.updateMe(selfProfilePayload)
-      : await employeesApi.update(updatedEmp.id, password ? { ...employeePayload, password } : employeePayload);
+      : await employeesApi.update(updatedEmp.id, cleanEmployeeUpdatePayload(updatedEmp));
     setEmployees((prev) => prev.map((emp) => (emp.id === saved.id ? saved : emp)));
     void refreshData(undefined, { silent: true });
     if (saved.id === currentUser?.employeeId) {
@@ -254,7 +270,7 @@ export default function App() {
     void refreshData(undefined, { silent: true });
   };
 
-  const handleAddEmployee = async (empData: any) => {
+  const handleAddEmployee = async (empData: CreateEmployeePayload) => {
     const saved = await employeesApi.create(empData);
     setEmployees((prev) => [...prev, saved]);
     void refreshData(undefined, { silent: true });
@@ -377,8 +393,8 @@ export default function App() {
     const empB = employees.find((e) => e.id === empIdB);
     if (!empA || !empB) return;
     const [savedA, savedB] = await Promise.all([
-      employeesApi.update(empA.id, { ...empA, strikeDutyOrder: empB.strikeDutyOrder }),
-      employeesApi.update(empB.id, { ...empB, strikeDutyOrder: empA.strikeDutyOrder }),
+      employeesApi.update(empA.id, cleanEmployeeUpdatePayload({ ...empA, strikeDutyOrder: empB.strikeDutyOrder })),
+      employeesApi.update(empB.id, cleanEmployeeUpdatePayload({ ...empB, strikeDutyOrder: empA.strikeDutyOrder })),
     ]);
     setEmployees((prev) => prev.map((emp) => (emp.id === savedA.id ? savedA : emp.id === savedB.id ? savedB : emp)));
     void refreshData(undefined, { silent: true });

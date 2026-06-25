@@ -111,8 +111,8 @@ export default function EmployeeDashboard({
     SUPPORT: 'Soporte',
     MAINTENANCE: 'Mantenimiento',
     DEPLOY: 'Deploy',
-    MEETING: 'Reunión',
-    DOCUMENTATION: 'Documentación',
+    MEETING: 'ReuniÃ³n',
+    DOCUMENTATION: 'DocumentaciÃ³n',
     OTHER: 'Otro',
   };
 
@@ -171,11 +171,11 @@ export default function EmployeeDashboard({
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newPasswordInput.length < 4) {
-      triggerAlert('error', 'La nueva contraseña debe tener al menos 4 caracteres.');
+      triggerAlert('error', 'La nueva contraseÃ±a debe tener al menos 4 caracteres.');
       return;
     }
     if (newPasswordInput !== confirmNewPasswordInput) {
-      triggerAlert('error', 'La confirmación no coincide con la nueva clave.');
+      triggerAlert('error', 'La confirmaciÃ³n no coincide con la nueva clave.');
       return;
     }
     try {
@@ -192,7 +192,7 @@ export default function EmployeeDashboard({
     setCurrentPasswordInput('');
     setNewPasswordInput('');
     setConfirmNewPasswordInput('');
-    triggerAlert('success', '¡Excelente! Contraseña actualizada con éxito.');
+    triggerAlert('success', 'Â¡Excelente! ContraseÃ±a actualizada con Ã©xito.');
   };
 
   // License Request state
@@ -271,15 +271,15 @@ export default function EmployeeDashboard({
     setEditingWorkLogId(log.id); setLogTitle(log.title); setLogDescription(log.description); setLogMode(log.mode); setLogProjectId(log.projectId || ''); setLogActivityType(log.activityType || 'PROJECT'); setLogHours(log.hours === undefined ? '' : String(log.hours)); setLogEntryTime(log.entryTime || ''); setLogExitTime(log.exitTime || ''); setLogDate(log.date); setOverrideDate(true); workLogFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
   const getDeadlineLabel = (project: Project) => {
-    if (!project.deadline) return 'Sin fecha límite';
+    if (!project.deadline) return 'Sin fecha lÃ­mite';
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const deadline = new Date(`${project.deadline}T00:00:00`);
     const diff = Math.ceil((deadline.getTime() - today.getTime()) / 86400000);
-    if (diff < 0) return `Vencido hace ${Math.abs(diff)} días`;
+    if (diff < 0) return `Vencido hace ${Math.abs(diff)} dÃ­as`;
     if (diff === 0) return 'Vence hoy';
     if (diff === 1) return 'Falta 1 dia';
-    return `Faltan ${diff} días`;
+    return `Faltan ${diff} dÃ­as`;
   };
 
   useEffect(() => {
@@ -295,7 +295,7 @@ export default function EmployeeDashboard({
       .then(setStatistics)
       .catch((error: any) => {
         const status = error?.response?.status;
-        setStatsError(status === 403 ? 'No tenés permisos para ver estas estadísticas.' : 'No se pudieron cargar las estadísticas.');
+        setStatsError(status === 403 ? 'No tenÃ©s permisos para ver estas estadÃ­sticas.' : 'No se pudieron cargar las estadÃ­sticas.');
       })
       .finally(() => setStatsLoading(false));
   }, [activeTab, statsYear, statsMonth, statsProjectId, statsActivityType]);
@@ -341,7 +341,7 @@ export default function EmployeeDashboard({
   const handleLogSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!logTitle.trim() || !logDescription.trim()) {
-      triggerAlert('error', 'Por favor, completa el título y la descripción del trabajo.');
+      triggerAlert('error', 'Por favor, completa el tÃ­tulo y la descripciÃ³n del trabajo.');
       return;
     }
 
@@ -378,7 +378,7 @@ export default function EmployeeDashboard({
       if (match) {
         triggerAlert('success', wasEditing ? 'Parte diario actualizado correctamente.' : `Trabajo diario guardado y vinculado al proyecto "${match.name}".`);
       } else {
-        triggerAlert('success', wasEditing ? 'Parte diario actualizado correctamente.' : 'Trabajo diario registrado con éxito.');
+        triggerAlert('success', wasEditing ? 'Parte diario actualizado correctamente.' : 'Trabajo diario registrado con Ã©xito.');
       }
     } catch (error: any) {
       triggerAlert('error', error?.response?.data?.message || 'No se pudieron guardar los cambios.');
@@ -412,13 +412,13 @@ export default function EmployeeDashboard({
     setLicenseEnd('');
     setLicenseReason('');
     setAttachedFile(null);
-    triggerAlert('success', 'Solicitud de licencia enviada a la Administración para aprobación.');
+    triggerAlert('success', 'Solicitud de licencia enviada a la AdministraciÃ³n para aprobaciÃ³n.');
   };
 
   // Days calculations
-  // Días tomados: employee.licenseDaysTaken
-  // Días de guardia acumulados que compensan días: employee.guardiasDone
-  // Días restantes a tomar: (employee.totalLicenseDays + employee.guardiasDone) - employee.licenseDaysTaken
+  // DÃ­as tomados: employee.licenseDaysTaken
+  // DÃ­as de guardia acumulados que compensan dÃ­as: employee.guardiasDone
+  // DÃ­as restantes a tomar: (employee.totalLicenseDays + employee.guardiasDone) - employee.licenseDaysTaken
   const remainingDaysToTake = employee.totalLicenseDays - employee.licenseDaysTaken;
 
   const todayStr = new Date().toISOString().split('T')[0];
@@ -460,7 +460,7 @@ export default function EmployeeDashboard({
         }`}>
           {alertMsg.type === 'success' ? <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" /> : <AlertCircle className="w-5 h-5 text-rose-600 flex-shrink-0" />}
           <div>
-            <p className="font-semibold text-sm">{alertMsg.type === 'success' ? 'Operación exitosa' : 'Atención'}</p>
+            <p className="font-semibold text-sm">{alertMsg.type === 'success' ? 'OperaciÃ³n exitosa' : 'AtenciÃ³n'}</p>
             <p className="text-xs mt-0.5">{alertMsg.text}</p>
           </div>
         </div>
@@ -480,18 +480,18 @@ export default function EmployeeDashboard({
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h4 className="font-bold text-sm font-sans flex items-center gap-1.5">
-                  {wasReminded ? 'Atención: Recordatorio Oficial de Administración' : 'Atención: Registro Diario Pendiente'}
+                  {wasReminded ? 'AtenciÃ³n: Recordatorio Oficial de AdministraciÃ³n' : 'AtenciÃ³n: Registro Diario Pendiente'}
                 </h4>
                 <span className={`text-[9.5px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
                   wasReminded ? 'bg-rose-150 text-rose-800 border border-rose-250' : 'bg-amber-150 text-amber-800 border border-amber-250'
                 }`}>
-                  {wasReminded ? 'Atención Urgente' : 'Pendiente Hoy'}
+                  {wasReminded ? 'AtenciÃ³n Urgente' : 'Pendiente Hoy'}
                 </span>
               </div>
               <p className="text-xs mt-1.5 leading-relaxed opacity-90 max-w-2xl font-sans text-slate-700">
                 {wasReminded 
                   ? `El administrador del sistema ha enviado un recordatorio formal para que registres tu actividad laboral de hoy (${todayStr}). Por favor, completa tu parte diario.`
-                  : `Aún no has registrado tu parte de asistencia correspondiente al día de hoy (${todayStr}). Recordá que declarar las actividades diarias es obligatorio.`}
+                  : `AÃºn no has registrado tu parte de asistencia correspondiente al dÃ­a de hoy (${todayStr}). RecordÃ¡ que declarar las actividades diarias es obligatorio.`}
               </p>
             </div>
           </div>
@@ -566,7 +566,7 @@ export default function EmployeeDashboard({
           }`}
         >
           <BarChart3 className="w-4 h-4" />
-          Mis estadísticas
+          Mis estadÃ­sticas
         </button>
         <button
           onClick={() => setActiveTab('licencias')}
@@ -604,18 +604,18 @@ export default function EmployeeDashboard({
               <h3 className="text-lg font-bold text-gray-900 mb-5 flex items-center gap-2">
                 <Plus className="w-5 h-5 text-indigo-600" /> {editingWorkLogId ? 'Editar parte diario' : 'Cargar Trabajo Diario'}
               </h3>
-              {hasLogToday && !editingWorkLogId && <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800">Ya cargaste tu parte diario de hoy. Podés editarlo. <button type="button" onClick={() => { const today = myWorkLogs.find((log) => log.date === todayStr); if (today) editWorkLog(today); }} className="ml-1 font-bold underline">Editar parte de hoy</button></div>}
+              {hasLogToday && !editingWorkLogId && <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800">Ya cargaste tu parte diario de hoy. PodÃ©s editarlo. <button type="button" onClick={() => { const today = myWorkLogs.find((log) => log.date === todayStr); if (today) editWorkLog(today); }} className="ml-1 font-bold underline">Editar parte de hoy</button></div>}
               
               <form onSubmit={handleLogSubmit} className="space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
-                    Título o Proyecto
+                    TÃ­tulo o Proyecto
                   </label>
                   <input
                     type="text"
                     value={logTitle}
                     onChange={(e) => setLogTitle(e.target.value)}
-                    placeholder="Ej. Digitalización de Expedientes"
+                    placeholder="Ej. DigitalizaciÃ³n de Expedientes"
                     className="w-full text-sm border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-800 transition-all"
                   />
                   {/* Suggestions warning for matched projects */}
@@ -624,7 +624,7 @@ export default function EmployeeDashboard({
                       {projects.some(p => (p.name || '').toLowerCase().trim() === (logTitle || '').toLowerCase().trim()) ? (
                         <p className="text-xs text-emerald-600 font-medium flex items-center gap-1 bg-emerald-50 p-2 rounded-lg">
                           <CheckCircle className="w-3.5 h-3.5" /> 
-                          Válido: Se vinculará como actualización automática del proyecto.
+                          VÃ¡lido: Se vincularÃ¡ como actualizaciÃ³n automÃ¡tica del proyecto.
                         </p>
                       ) : (
                         <div className="text-xs text-gray-500 bg-slate-50 p-2 rounded-lg space-y-1">
@@ -700,7 +700,7 @@ export default function EmployeeDashboard({
                 </div>
 
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Horario del día (opcional)</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Horario del dÃ­a (opcional)</p>
                   <div className="mt-2 grid grid-cols-2 gap-3">
                     <label className="text-[10px] font-bold text-slate-600">Entrada
                       <input type="time" value={logEntryTime} onChange={(e) => setLogEntryTime(e.target.value)} className="mt-1 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs font-normal" />
@@ -713,7 +713,7 @@ export default function EmployeeDashboard({
 
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
-                    Modalidad del Día
+                    Modalidad del DÃ­a
                   </label>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {(['presencial', 'remoto', 'mixto', 'licencia'] as const).map((mode) => (
@@ -750,7 +750,7 @@ export default function EmployeeDashboard({
                       }}
                       className="text-[10px] font-bold text-indigo-600 uppercase hover:underline"
                     >
-                      {overrideDate ? "Fijar a hoy" : "Elegir otro día"}
+                      {overrideDate ? "Fijar a hoy" : "Elegir otro dÃ­a"}
                     </button>
                   </div>
                   {overrideDate ? (
@@ -771,13 +771,13 @@ export default function EmployeeDashboard({
 
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
-                    ¿Qué hiciste hoy? (Descripción de Tarea)
+                    Â¿QuÃ© hiciste hoy? (DescripciÃ³n de Tarea)
                   </label>
                   <textarea
                     rows={4}
                     value={logDescription}
                     onChange={(e) => setLogDescription(e.target.value)}
-                    placeholder="Describe en detalle las tareas realizadas, problemas resueltos o avances del día..."
+                    placeholder="Describe en detalle las tareas realizadas, problemas resueltos o avances del dÃ­a..."
                     className="w-full text-sm border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-800 transition-all font-sans"
                   ></textarea>
                 </div>
@@ -786,7 +786,7 @@ export default function EmployeeDashboard({
                   <button type="submit" disabled={isSavingWorkLog} className="flex-1 cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm py-3.5 px-4 rounded-xl transition-all shadow-md disabled:opacity-60">
                     {isSavingWorkLog ? 'Guardando...' : editingWorkLogId ? 'Guardar cambios' : 'Registrar Jornada Laboral'}
                   </button>
-                  {editingWorkLogId && <button type="button" onClick={resetWorkLogForm} className="rounded-xl border px-4 text-xs font-bold">Cancelar edición</button>}
+                  {editingWorkLogId && <button type="button" onClick={resetWorkLogForm} className="rounded-xl border px-4 text-xs font-bold">Cancelar ediciÃ³n</button>}
                 </div>
               </form>
             </div>
@@ -822,7 +822,7 @@ export default function EmployeeDashboard({
                     value={dailyYear}
                     onChange={(e) => setDailyYear(e.target.value)}
                     className="text-xs border border-slate-200 rounded-xl px-3 py-2"
-                    placeholder="Año"
+                    placeholder="AÃ±o"
                   />
                   <select value={dailyMonth} onChange={(e) => setDailyMonth(e.target.value)} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
                     {Array.from({ length: 12 }, (_, idx) => <option key={idx + 1} value={idx + 1}>{new Date(2026, idx, 1).toLocaleDateString('es-AR', { month: 'long' })}</option>)}
@@ -852,7 +852,7 @@ export default function EmployeeDashboard({
                 <div className="bg-white p-12 text-center rounded-2xl border border-dashed border-gray-250">
                   <Clock className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                   <p className="text-gray-500 text-sm">Sin registros para este mes.</p>
-                  <p className="text-gray-400 text-xs mt-1">Ajustá los filtros o cargá un parte desde el formulario.</p>
+                  <p className="text-gray-400 text-xs mt-1">AjustÃ¡ los filtros o cargÃ¡ un parte desde el formulario.</p>
                 </div>
               ) : (
                 <div className="space-y-4 max-h-[550px] overflow-y-auto pr-2">
@@ -926,7 +926,7 @@ export default function EmployeeDashboard({
                       <div className="mb-3 bg-slate-50 border border-dashed border-slate-200 rounded-xl p-3 text-xs text-slate-500">Sin registros para este mes.</div>
                     )}
                     <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-black uppercase text-slate-400 mb-2">
-                      {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map((day) => <span key={day}>{day}</span>)}
+                      {['Lun', 'Mar', 'MiÃ©', 'Jue', 'Vie', 'SÃ¡b', 'Dom'].map((day) => <span key={day}>{day}</span>)}
                     </div>
                     <div className="grid grid-cols-7 gap-1">
                       {calendarCells.map((date, idx) => {
@@ -946,7 +946,7 @@ export default function EmployeeDashboard({
                             <div className="mt-1 space-y-1">
                               {dayLogs.slice(0, 2).map((log) => (
                                 <span key={log.id} className={`block truncate text-[9px] font-bold border rounded px-1 py-0.5 ${modeBadgeClass(log.mode)}`}>
-                                  {modeLabels[log.mode] || log.mode}{log.activityType ? ` · ${activityTypeLabel(log.activityType)}` : ''}
+                                  {modeLabels[log.mode] || log.mode}{log.activityType ? ` Â· ${activityTypeLabel(log.activityType)}` : ''}
                                 </span>
                               ))}
                               {dayLogs.length > 2 && <span className="block text-[9px] font-bold text-slate-500">+{dayLogs.length - 2}</span>}
@@ -960,7 +960,7 @@ export default function EmployeeDashboard({
                   <div className="xl:col-span-4 bg-white border border-gray-150 rounded-2xl p-4 shadow-sm">
                     <div className="flex items-start justify-between gap-2 mb-3">
                       <div>
-                        <h4 className="text-sm font-black text-slate-900">Día seleccionado</h4>
+                        <h4 className="text-sm font-black text-slate-900">DÃ­a seleccionado</h4>
                         <p className="text-xs text-slate-500 font-mono">{selectedCalendarDate}</p>
                       </div>
                       <button type="button" onClick={() => openFormForDate(selectedCalendarDate)} className="text-[10px] font-black bg-indigo-600 text-white rounded-xl px-3 py-2 hover:bg-indigo-700">
@@ -970,9 +970,9 @@ export default function EmployeeDashboard({
                     {selectedDayLogs.length === 0 ? (
                       <div className="border border-dashed border-slate-200 rounded-xl p-5 text-center">
                         <Clock className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                        <p className="text-sm text-slate-500">Sin registros para este día.</p>
+                        <p className="text-sm text-slate-500">Sin registros para este dÃ­a.</p>
                         <button type="button" onClick={() => openFormForDate(selectedCalendarDate)} className="mt-3 text-xs font-bold text-indigo-600 hover:underline">
-                          Cargar parte para este día
+                          Cargar parte para este dÃ­a
                         </button>
                       </div>
                     ) : (
@@ -1085,7 +1085,7 @@ export default function EmployeeDashboard({
 
                     {isAssigned && (
                       <span className="self-start sm:self-auto text-[10px] font-black uppercase tracking-wider bg-indigo-50 border border-indigo-150 text-indigo-700 px-3 py-1 rounded-full">
-                        Tu equipo está asignado a este proyecto
+                        Tu equipo estÃ¡ asignado a este proyecto
                       </span>
                     )}
                   </div>
@@ -1117,7 +1117,7 @@ export default function EmployeeDashboard({
                               <Plus className="w-4 h-4" /> Cargar Parte de Trabajo para este Proyecto
                             </button>
                             <p className="text-[10px] text-gray-400 italic text-center mt-2 font-medium">
-                              Rellena automáticamente el título para sincronizar tu carga.
+                              Rellena automÃ¡ticamente el tÃ­tulo para sincronizar tu carga.
                             </p>
                           </div>
                         )}
@@ -1143,14 +1143,14 @@ export default function EmployeeDashboard({
                                 <option value="SUPPORT">Soporte</option>
                                 <option value="MAINTENANCE">Mantenimiento</option>
                                 <option value="DEPLOY">Deploy</option>
-                                <option value="MEETING">Reunión</option>
-                                <option value="DOCUMENTATION">Documentación</option>
+                                <option value="MEETING">ReuniÃ³n</option>
+                                <option value="DOCUMENTATION">DocumentaciÃ³n</option>
                                 <option value="OTHER">Otro</option>
                               </select>
                               <input value={newUpdateStatus} onChange={(e) => setNewUpdateStatus(e.target.value)} placeholder="Estado del avance" className="text-xs border border-gray-200 rounded-xl p-3" />
                               <input value={newUpdateHours} onChange={(e) => setNewUpdateHours(e.target.value)} type="number" min="0" step="0.25" placeholder="Horas dedicadas" className="text-xs border border-gray-200 rounded-xl p-3" />
                               <input value={newUpdateBlockers} onChange={(e) => setNewUpdateBlockers(e.target.value)} placeholder="Bloqueos / problemas" className="text-xs border border-gray-200 rounded-xl p-3" />
-                              <input value={newUpdateNextStep} onChange={(e) => setNewUpdateNextStep(e.target.value)} placeholder="Próximo paso" className="text-xs border border-gray-200 rounded-xl p-3" />
+                              <input value={newUpdateNextStep} onChange={(e) => setNewUpdateNextStep(e.target.value)} placeholder="PrÃ³ximo paso" className="text-xs border border-gray-200 rounded-xl p-3" />
                             </div>
                             <button
                               type="button"
@@ -1225,15 +1225,15 @@ export default function EmployeeDashboard({
                           <h5 className="text-xs font-black text-slate-900 uppercase tracking-wider">Historial Integrado de Avances</h5>
                         </div>
                         <span className="text-[10px] bg-indigo-50 text-indigo-700 font-bold font-mono px-2 py-0.5 rounded">
-                          {combinedTimeline.length} actualizaciónes
+                          {combinedTimeline.length} actualizaciÃ³nes
                         </span>
                       </div>
 
-                      {combinedTimeline.length > 10 && <div className="mb-4 flex items-center justify-end gap-2 text-xs"><button type="button" disabled={projectTimelinePage === 1} onClick={() => setProjectTimelinePage((page) => page - 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Anterior</button><strong>Página {projectTimelinePage} de {timelinePages}</strong><button type="button" disabled={projectTimelinePage === timelinePages} onClick={() => setProjectTimelinePage((page) => page + 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Siguiente</button></div>}
+                      {combinedTimeline.length > 10 && <div className="mb-4 flex items-center justify-end gap-2 text-xs"><button type="button" disabled={projectTimelinePage === 1} onClick={() => setProjectTimelinePage((page) => page - 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Anterior</button><strong>PÃ¡gina {projectTimelinePage} de {timelinePages}</strong><button type="button" disabled={projectTimelinePage === timelinePages} onClick={() => setProjectTimelinePage((page) => page + 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Siguiente</button></div>}
 
                       {combinedTimeline.length === 0 ? (
                         <div className="py-12 text-center text-slate-400 font-sans">
-                          <p className="text-xs italic">Aún no se registran partes diarios ni comunicaciones oficiales.</p>
+                          <p className="text-xs italic">AÃºn no se registran partes diarios ni comunicaciones oficiales.</p>
                         </div>
                       ) : (
                         <div className="relative border-l border-indigo-100 pl-4 ml-1.5 space-y-5">
@@ -1269,7 +1269,7 @@ export default function EmployeeDashboard({
                                           ? 'bg-rose-100 text-rose-700' 
                                           : 'bg-indigo-100 text-indigo-700'
                                       }`}>
-                                        {isAdminType ? 'DIRECCIÓN ADMIN' : 'AVANCE EQUIPO'}
+                                        {isAdminType ? 'DIRECCIÃ“N ADMIN' : 'AVANCE EQUIPO'}
                                       </span>
                                     </div>
                                     <span className="text-[9px] font-mono font-medium text-gray-400">
@@ -1288,7 +1288,7 @@ export default function EmployeeDashboard({
                                       {item.progressStatus && <span className="bg-slate-50 border rounded px-2 py-1"><b>Estado:</b> {item.progressStatus}</span>}
                                       {item.hours !== undefined && <span className="bg-slate-50 border rounded px-2 py-1"><b>Horas:</b> {item.hours}</span>}
                                       {item.blockers && <span className="bg-rose-50 border border-rose-100 rounded px-2 py-1"><b>Bloqueos:</b> {item.blockers}</span>}
-                                      {item.nextStep && <span className="bg-indigo-50 border border-indigo-100 rounded px-2 py-1"><b>Próximo:</b> {item.nextStep}</span>}
+                                      {item.nextStep && <span className="bg-indigo-50 border border-indigo-100 rounded px-2 py-1"><b>PrÃ³ximo:</b> {item.nextStep}</span>}
                                     </div>
                                   )}
 
@@ -1313,9 +1313,9 @@ export default function EmployeeDashboard({
               <>
                 <div className="border bg-amber-50 border-amber-200 p-4 rounded-xl text-xs text-amber-900">
                   <span className="font-bold flex items-center gap-1.5 mb-1 text-sm">
-                    <AlertCircle className="w-4 h-4 text-amber-600" /> Regla de Vinculación Automática
+                    <AlertCircle className="w-4 h-4 text-amber-600" /> Regla de VinculaciÃ³n AutomÃ¡tica
                   </span>
-                  Como empleado, siempre que registres un parte de trabajo diario con el **mismo nombre exacto** de un proyecto vigente, tus desarrollos se sincronizarán directamente como avances de proyecto y quedarán documentados para la administración.
+                  Como empleado, siempre que registres un parte de trabajo diario con el **mismo nombre exacto** de un proyecto vigente, tus desarrollos se sincronizarÃ¡n directamente como avances de proyecto y quedarÃ¡n documentados para la administraciÃ³n.
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1410,14 +1410,14 @@ export default function EmployeeDashboard({
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-4">
                 <div>
                   <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                    <BarChart3 className="w-5 h-5 text-indigo-600" /> Mis estadísticas
+                    <BarChart3 className="w-5 h-5 text-indigo-600" /> Mis estadÃ­sticas
                   </h3>
                   <p className="text-xs text-slate-500">Tus proyectos asignados, avances, soporte y horas cargadas.</p>
                 </div>
                 {statsLoading && <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg">Cargando...</span>}
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                <input value={statsYear} onChange={(e) => setStatsYear(e.target.value)} placeholder="Año" className="text-xs border rounded-xl px-3 py-2" />
+                <input value={statsYear} onChange={(e) => setStatsYear(e.target.value)} placeholder="AÃ±o" className="text-xs border rounded-xl px-3 py-2" />
                 <select value={statsMonth} onChange={(e) => setStatsMonth(e.target.value)} className="text-xs border rounded-xl px-3 py-2">
                   <option value="todos">Mes</option>
                   {Array.from({ length: 12 }, (_, idx) => <option key={idx + 1} value={idx + 1}>{idx + 1}</option>)}
@@ -1519,7 +1519,7 @@ export default function EmployeeDashboard({
               <form onSubmit={handleLicenseSubmit} className="space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
-                    Artículo / Ley Reguladora
+                    ArtÃ­culo / Ley Reguladora
                   </label>
                   <select
                     value={licenseArticle}
@@ -1528,7 +1528,7 @@ export default function EmployeeDashboard({
                   >
                     {licenseRules.map((rule) => (
                       <option key={rule.id} value={rule.article}>
-                        {rule.article} - {rule.name} (Límite: {rule.maxDaysPerYear}d)
+                        {rule.article} - {rule.name} (LÃ­mite: {rule.maxDaysPerYear}d)
                       </option>
                     ))}
                   </select>
@@ -1574,7 +1574,7 @@ export default function EmployeeDashboard({
                 {/* Upload Certificate Widget (supports Drag and Drop as requested) */}
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
-                    Adjuntar Certificado de Licencia (Certificado Médico/Examen/etc)
+                    Adjuntar Certificado de Licencia (Certificado MÃ©dico/Examen/etc)
                   </label>
                   
                   <div 
@@ -1603,7 +1603,7 @@ export default function EmployeeDashboard({
                         <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
                         <div className="text-left font-mono">
                           <p className="font-semibold truncate max-w-xs">{attachedFile.name}</p>
-                          <p className="text-[10px] text-emerald-600">Adjuntado con éxito. Haz clic para cambiarlo.</p>
+                          <p className="text-[10px] text-emerald-600">Adjuntado con Ã©xito. Haz clic para cambiarlo.</p>
                         </div>
                       </div>
                     ) : (
@@ -1632,7 +1632,7 @@ export default function EmployeeDashboard({
               {myLicenseRequests.length === 0 ? (
                 <div className="bg-white p-12 text-center rounded-2xl border">
                   <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                  <p className="text-gray-500 text-sm">No has realizado ninguna solicitud de licencia aún.</p>
+                  <p className="text-gray-500 text-sm">No has realizado ninguna solicitud de licencia aÃºn.</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -1670,8 +1670,8 @@ export default function EmployeeDashboard({
                           {licenseStatusLabel(req.status)}
                         </span>
                         {req.status === 'pendiente' && <button type="button" onClick={() => {
-                          if (!window.confirm('¿Seguro que querés eliminar esta solicitud de licencia?')) return;
-                          onDeleteLicenseRequest(req.id).then(() => triggerAlert('success', 'Solicitud eliminada correctamente')).catch((error: any) => triggerAlert('error', error?.response?.data?.message || 'No tenés permisos para eliminar esta solicitud'));
+                          if (!window.confirm('Â¿Seguro que querÃ©s eliminar esta solicitud de licencia?')) return;
+                          onDeleteLicenseRequest(req.id).then(() => triggerAlert('success', 'Solicitud eliminada correctamente')).catch((error: any) => triggerAlert('error', error?.response?.data?.message || 'No tenÃ©s permisos para eliminar esta solicitud'));
                         }} className="mt-2 block text-xs font-bold text-rose-600 underline">Eliminar</button>}
                       </div>
                     </div>
@@ -1686,14 +1686,14 @@ export default function EmployeeDashboard({
         {/* TAB 4: MI PERFIL */}
         {activeTab === 'perfil' && (
           <div className="space-y-8 animate-fade-in">
-            {/* Resumen de Días de Feria, Compensatorios y Otras Licencias */}
+            {/* Resumen de DÃ­as de Feria, Compensatorios y Otras Licencias */}
             <div className="bg-gradient-to-br from-slate-50 to-slate-150 p-6 rounded-3xl border border-gray-200 space-y-6">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200/60 pb-4">
                 <div>
                   <h3 className="text-md font-bold text-slate-900 flex items-center gap-2">
                     <Calendar className="w-5 h-5 text-indigo-600" /> Panel de Control de Licencias y Francos
                   </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">Feria judicial, compensatorios, guardias acreditadas y otras licencias tramitadas por artículos.</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Feria judicial, compensatorios, guardias acreditadas y otras licencias tramitadas por artÃ­culos.</p>
                 </div>
                 <span className="text-xs bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold px-3 py-1 rounded-full font-mono">
                   {employee.dependency}
@@ -1701,22 +1701,22 @@ export default function EmployeeDashboard({
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                {/* Bloque Izquierdo: Feria Judicial & Compensatorios (Fórmula) */}
+                {/* Bloque Izquierdo: Feria Judicial & Compensatorios (FÃ³rmula) */}
                 <div className="lg:col-span-7 space-y-4">
                   <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5 mb-1">
                      Feria Judicial & Compensatorios (Art. 14)
                   </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="bg-white p-3.5 rounded-2xl border border-indigo-100 shadow-xs">
-                      <span className="block text-[11px] uppercase tracking-wider text-indigo-600 font-bold pb-2 border-b">Días compensatorios por guardia</span>
+                      <span className="block text-[11px] uppercase tracking-wider text-indigo-600 font-bold pb-2 border-b">DÃ­as compensatorios por guardia</span>
                       <div className="flex items-baseline gap-1 mt-2">
-                        <span className="text-lg font-extrabold text-indigo-600">{employee.guardiasDone > 0 ? `${employee.guardiasDone} días disponibles` : 'Sin días compensatorios acumulados'}</span>
+                        <span className="text-lg font-extrabold text-indigo-600">{employee.guardiasDone > 0 ? `${employee.guardiasDone} dÃ­as disponibles` : 'Sin dÃ­as compensatorios acumulados'}</span>
                       </div>
                       <p className="text-[9px] text-indigo-450 mt-1">Saldo independiente de las licencias comunes.</p>
                     </div>
 
                     <div className="bg-white p-3.5 rounded-2xl border border-gray-150 shadow-xs">
-                      <span className="block text-[11px] uppercase tracking-wider text-amber-700 font-bold pb-2 border-b">Días de licencia tomados</span>
+                      <span className="block text-[11px] uppercase tracking-wider text-amber-700 font-bold pb-2 border-b">DÃ­as de licencia tomados</span>
                       <div className="flex items-baseline gap-1 mt-2">
                         <span className="text-2xl font-extrabold text-amber-600 font-mono">-{employee.licenseDaysTaken}</span>
                         <span className="text-[10px] text-amber-500 font-bold">d</span>
@@ -1725,7 +1725,7 @@ export default function EmployeeDashboard({
                     </div>
 
                     <div className="bg-white p-3.5 rounded-2xl border-emerald-250 shadow-xs ring-2 ring-emerald-50 bg-emerald-50/15">
-                      <span className="block text-[11px] uppercase tracking-wider text-emerald-800 font-extrabold pb-2 border-b">Saldo de licencia común</span>
+                      <span className="block text-[11px] uppercase tracking-wider text-emerald-800 font-extrabold pb-2 border-b">Saldo de licencia comÃºn</span>
                       <div className="flex items-baseline gap-1 mt-2">
                         <span className="text-2xl font-black text-emerald-600 font-mono">{remainingDaysToTake}</span>
                         <span className="text-[10px] text-emerald-550 font-extrabold">d</span>
@@ -1735,11 +1735,11 @@ export default function EmployeeDashboard({
                   </div>
                 </div>
 
-                {/* Bloque Derecho: Registro de los otros artículos solicitados */}
+                {/* Bloque Derecho: Registro de los otros artÃ­culos solicitados */}
                 <div className="lg:col-span-5 space-y-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
                   <div className="flex justify-between items-center pb-2 border-b border-slate-100">
                     <h4 className="text-[11px] font-black text-slate-700 uppercase tracking-widest flex items-center gap-1.5">
-                       Registro de Otros Artículos
+                       Registro de Otros ArtÃ­culos
                     </h4>
                     <span className="text-[9.5px] bg-slate-100 text-slate-700 font-bold px-2 py-0.5 rounded font-mono">
                       {otherLicenses.length} {otherLicenses.length === 1 ? 'solicitud' : 'solicitudes'}
@@ -1748,7 +1748,7 @@ export default function EmployeeDashboard({
 
                   {otherLicenses.length === 0 ? (
                     <div className="text-center py-7 text-slate-400 text-xs italic font-sans">
-                      No registras solicitudes por otros artículos.
+                      No registras solicitudes por otros artÃ­culos.
                     </div>
                   ) : (
                     <div className="space-y-2 max-h-[145px] overflow-y-auto pr-1">
@@ -1785,10 +1785,10 @@ export default function EmployeeDashboard({
                     </div>
                   )}
 
-                  {/* Consumo total por artículo */}
+                  {/* Consumo total por artÃ­culo */}
                   {Object.keys(otherArticlesSummary).length > 0 && (
                     <div className="pt-2 border-t border-slate-100">
-                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Resumen de Días Utilizados:</p>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Resumen de DÃ­as Utilizados:</p>
                       <div className="flex flex-wrap gap-1.5">
                         {Object.values(otherArticlesSummary).map((sum) => (
                           <div key={sum.article} className="bg-slate-50 border border-slate-200 rounded-lg py-0.5 px-2 text-[10px] flex items-center gap-1">
@@ -1842,7 +1842,7 @@ export default function EmployeeDashboard({
 
                       <div className="text-center">
                         <p className="text-xs font-bold text-slate-700">Personaliza tu Avatar</p>
-                        <p className="text-[10px] text-slate-400 mt-0.5">Sube un archivo de imagen o arrástralo aquí</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">Sube un archivo de imagen o arrÃ¡stralo aquÃ­</p>
                       </div>
 
                       {/* Drag-and-drop / selector zone */}
@@ -1859,7 +1859,7 @@ export default function EmployeeDashboard({
                                 .then(() => triggerAlert('success', 'Foto de perfil cambiada correctamente.'))
                                 .catch(() => triggerAlert('error', 'No se pudo cambiar la foto de perfil.'));
                             } else {
-                              triggerAlert('error', 'El archivo debe ser una imagen válida (PNG o JPG).');
+                              triggerAlert('error', 'El archivo debe ser una imagen vÃ¡lida (PNG o JPG).');
                             }
                           }
                         }}
@@ -1900,10 +1900,10 @@ export default function EmployeeDashboard({
                                 const input = e.currentTarget;
                                 if (input.value.trim().startsWith('http')) {
                                   onUpdateAvatar(employee.id, input.value.trim());
-                                  triggerAlert('success', '¡Excelente! Foto de perfil actualizada vía URL.');
+                                  triggerAlert('success', 'Â¡Excelente! Foto de perfil actualizada vÃ­a URL.');
                                   input.value = '';
                                 } else {
-                                  triggerAlert('error', 'Por favor, introduce una URL de imagen válida que empiece con http/https.');
+                                  triggerAlert('error', 'Por favor, introduce una URL de imagen vÃ¡lida que empiece con http/https.');
                                 }
                               }
                             }}
@@ -1913,10 +1913,10 @@ export default function EmployeeDashboard({
                               const input = document.getElementById('avatar-link-url') as HTMLInputElement;
                               if (input && input.value.trim().startsWith('http')) {
                                 onUpdateAvatar(employee.id, input.value.trim());
-                                triggerAlert('success', '¡Excelente! Foto de perfil actualizada vía URL.');
+                                triggerAlert('success', 'Â¡Excelente! Foto de perfil actualizada vÃ­a URL.');
                                 input.value = '';
                               } else {
-                                triggerAlert('error', 'Por favor, introduce una URL de imagen válida.');
+                                triggerAlert('error', 'Por favor, introduce una URL de imagen vÃ¡lida.');
                               }
                             }}
                             className="bg-slate-800 text-white hover:bg-black font-bold text-[10px] px-2.5 rounded-lg transition-colors cursor-pointer"
@@ -1929,7 +1929,7 @@ export default function EmployeeDashboard({
                   </div>
 
                   <form onSubmit={saveProfile} className="space-y-3 rounded-2xl border border-slate-100 p-4">
-                    <div className="flex items-center justify-between"><strong className="text-sm">Información personal</strong>{!profileEditing && <button type="button" onClick={() => setProfileEditing(true)} className="text-xs font-bold text-indigo-700">Editar</button>}</div>
+                    <div className="flex items-center justify-between"><strong className="text-sm">InformaciÃ³n personal</strong>{!profileEditing && <button type="button" onClick={() => setProfileEditing(true)} className="text-xs font-bold text-indigo-700">Editar</button>}</div>
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <label className="text-[10px] font-bold uppercase text-slate-500">Nombre<input disabled={!profileEditing} value={profileFirstName} onChange={(event) => setProfileFirstName(event.target.value)} required className="mt-1 w-full rounded-xl border px-3 py-2 text-xs disabled:bg-slate-100" /></label>
                       <label className="text-[10px] font-bold uppercase text-slate-500">Apellido<input disabled={!profileEditing} value={profileLastName} onChange={(event) => setProfileLastName(event.target.value)} className="mt-1 w-full rounded-xl border px-3 py-2 text-xs disabled:bg-slate-100" /></label>
@@ -1947,7 +1947,7 @@ export default function EmployeeDashboard({
                       <span className="text-sm font-bold text-gray-800">{employee.name}</span>
                     </div>
                     <div>
-                      <span className="text-xs text-gray-400 block font-semibold uppercase tracking-wider">Correo Electrónico</span>
+                      <span className="text-xs text-gray-400 block font-semibold uppercase tracking-wider">Correo ElectrÃ³nico</span>
                       <span className="text-sm font-mono font-bold text-gray-800">{employee.email}</span>
                     </div>
                     <div>
@@ -1966,7 +1966,7 @@ export default function EmployeeDashboard({
                             </span>
                           ))
                         ) : (
-                          <span className="text-xs text-gray-500 italic">No tienes días asignados (100% Presencial)</span>
+                          <span className="text-xs text-gray-500 italic">No tienes dÃ­as asignados (100% Presencial)</span>
                         )}
                       </div>
                     </div>
@@ -1980,7 +1980,7 @@ export default function EmployeeDashboard({
                   </h3>
                   <form onSubmit={handlePasswordChange} className="space-y-4">
                     <div>
-                      <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Contraseña Actual</label>
+                      <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">ContraseÃ±a Actual</label>
                       <input
                         type="password"
                         value={currentPasswordInput}
@@ -1991,18 +1991,18 @@ export default function EmployeeDashboard({
                       />
                     </div>
                     <div>
-                      <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Nueva Contraseña</label>
+                      <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Nueva ContraseÃ±a</label>
                       <input
                         type="password"
                         value={newPasswordInput}
                         onChange={(e) => setNewPasswordInput(e.target.value)}
-                        placeholder="Mínimo 4 caracteres"
+                        placeholder="MÃ­nimo 4 caracteres"
                         className="w-full text-xs font-semibold border border-gray-300 rounded-xl px-3 py-2.5 bg-slate-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-900"
                         required
                       />
                     </div>
                     <div>
-                      <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Confirmar Nueva Contraseña</label>
+                      <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Confirmar Nueva ContraseÃ±a</label>
                       <input
                         type="password"
                         value={confirmNewPasswordInput}
@@ -2016,16 +2016,16 @@ export default function EmployeeDashboard({
                       type="submit"
                       className="w-full cursor-pointer bg-slate-950 hover:bg-indigo-650 text-white font-bold text-xs py-3 rounded-xl transition-all shadow-sm"
                     >
-                      Actualizar Contraseña
+                      Actualizar ContraseÃ±a
                     </button>
                   </form>
                 </div>
               </div>
 
-              {/* Card 3: Próximo en días de paro (Strike day duty roster) */}
+              {/* Card 3: PrÃ³ximo en dÃ­as de paro (Strike day duty roster) */}
               <div className="bg-white p-6 rounded-2xl border border-gray-150 shadow-sm">
                 <h3 className="text-md font-bold text-red-700 border-b pb-3 mb-4 flex items-center gap-2">
-                  <ShieldAlert className="w-5 h-5 text-red-500 animate-pulse" /> Guardia de Contingencia (Días de Paro)
+                  <ShieldAlert className="w-5 h-5 text-red-500 animate-pulse" /> Guardia de Contingencia (DÃ­as de Paro)
                 </h3>
 
                 {/* PROXIMO PARO PROGRAMADO POR ADMINISTRACION */}
@@ -2042,7 +2042,7 @@ export default function EmployeeDashboard({
 
                     <div className="text-xs text-slate-700 leading-normal">
                       <p className="font-sans">
-                        Se ha convocado una medida de fuerza para el día <strong className="text-red-900 font-bold">{strikeConfig.nextDate}</strong>. El agente designado para cubrir es:
+                        Se ha convocado una medida de fuerza para el dÃ­a <strong className="text-red-900 font-bold">{strikeConfig.nextDate}</strong>. El agente designado para cubrir es:
                       </p>
                       
                       {/* Person detail */}
@@ -2062,7 +2062,7 @@ export default function EmployeeDashboard({
                             />
                             <div className="flex-1 min-w-0">
                               <span className={`font-bold block text-xs truncate ${isMe ? 'text-white' : 'text-slate-800'}`}>
-                                {targetEmp.name} {isMe && '(TÚ)'}
+                                {targetEmp.name} {isMe && '(TÃš)'}
                               </span>
                               <span className={`text-[10px] block truncate ${isMe ? 'text-red-200' : 'text-slate-400'}`}>
                                 {targetEmp.position || 'Oficial'}
@@ -2070,7 +2070,7 @@ export default function EmployeeDashboard({
                             </div>
                             {isMe && (
                               <span className="bg-white text-red-700 font-extrabold text-[9px] px-2.5 py-1 rounded-full uppercase tracking-wider shadow">
-                                ¡Te Toca!
+                                Â¡Te Toca!
                               </span>
                             )}
                           </div>
@@ -2107,7 +2107,7 @@ export default function EmployeeDashboard({
                         
                         <div className="flex-1 min-w-0">
                           <p className={`font-bold truncate ${isNextActive ? 'text-red-950 font-black' : isUser ? 'text-indigo-900' : 'text-slate-700'}`}>
-                            {emp.name} {isUser && '(Tú)'}
+                            {emp.name} {isUser && '(TÃº)'}
                           </p>
                           <p className="text-[10px] text-gray-400 truncate">{emp.position || 'Agente'}</p>
                         </div>
@@ -2115,12 +2115,12 @@ export default function EmployeeDashboard({
                         <div className="flex flex-col gap-1 items-end">
                           {isNextActive && (
                             <span className="bg-red-100 text-red-750 font-black text-[8px] uppercase tracking-wider px-2 py-0.5 rounded-full animate-pulse">
-                              PRÓXIMA GUARD.
+                              PRÃ“XIMA GUARD.
                             </span>
                           )}
                           {isLastCover && (
                             <span className="bg-indigo-100 text-indigo-700 font-bold text-[8px] uppercase tracking-wider px-2 py-0.5 rounded-full">
-                              Último Cubrió
+                              Ãšltimo CubriÃ³
                             </span>
                           )}
                         </div>

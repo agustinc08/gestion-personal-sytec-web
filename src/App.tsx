@@ -118,6 +118,11 @@ export default function App() {
     };
   }, [currentUser, refreshData]);
 
+  const normalizedNumber = (value: unknown) => {
+    const numeric = Number(value) || 0;
+    return Object.is(numeric, -0) ? 0 : numeric;
+  };
+
   const processedEmployees = useMemo(() => {
     return employees.map((emp) => {
       let taken = 0;
@@ -127,7 +132,12 @@ export default function App() {
           if (req.article === 'Art. 14') taken += days;
         }
       });
-      return { ...emp, guardiasDone: emp.guardiasDone || 0, licenseDaysTaken: taken, totalLicenseDays: emp.totalLicenseDays || 0 };
+      return {
+        ...emp,
+        guardiasDone: normalizedNumber(emp.guardiasDone),
+        licenseDaysTaken: normalizedNumber(taken),
+        totalLicenseDays: normalizedNumber(emp.totalLicenseDays),
+      };
     });
   }, [employees, licenseRequests]);
 
@@ -142,12 +152,16 @@ export default function App() {
     return session.user;
   };
 
-  const cleanEmployeeUpdatePayload = (employee: Partial<Employee>): UpdateEmployeePayload => {
+  const cleanPayload = <T extends Record<string, unknown>>(payload: T): T => Object.fromEntries(
+    Object.entries(payload).filter(([, value]) => value !== undefined && value !== '' && value !== null),
+  ) as T;
+
+  const cleanEmployeeUpdatePayload = (employee: Partial<Employee>, options: { includeAvatar?: boolean } = {}): UpdateEmployeePayload => {
     const password = employee.password?.trim();
-    return {
+    return cleanPayload({
       name: employee.name,
       email: employee.email,
-      avatar: employee.avatar,
+      ...(options.includeAvatar ? { avatar: employee.avatar } : {}),
       dependency: employee.dependency,
       dependencyId: employee.dependencyId,
       position: employee.position,
@@ -158,16 +172,15 @@ export default function App() {
       mustChangePassword: employee.mustChangePassword,
       isAdmin: employee.isAdmin,
       ...(password ? { password } : {}),
-    };
+    });
   };
 
   const handleUpdateEmployee = async (updatedEmp: Employee) => {
-    const selfProfilePayload: UpdateEmployeePayload = {
+    const selfProfilePayload: UpdateEmployeePayload = cleanPayload({
       name: updatedEmp.name,
       email: updatedEmp.email,
-      avatar: updatedEmp.avatar,
       ...(updatedEmp.password?.trim() ? { password: updatedEmp.password.trim() } : {}),
-    };
+    });
     const saved = updatedEmp.id === currentUser?.employeeId
       ? await employeesApi.updateMe(selfProfilePayload)
       : await employeesApi.update(updatedEmp.id, cleanEmployeeUpdatePayload(updatedEmp));
@@ -364,7 +377,7 @@ export default function App() {
       ? (employeeId === currentUser?.employeeId && currentUser?.role !== 'ADMIN'
         ? await employeesApi.uploadMyAvatar(avatarUrl)
         : await employeesApi.uploadAvatar(employeeId, avatarUrl))
-      : await handleUpdateEmployee({ ...emp, avatar: avatarUrl });
+      : await employeesApi.update(employeeId, cleanEmployeeUpdatePayload({ avatar: avatarUrl }, { includeAvatar: true }));
     setEmployees((prev) => prev.map((item) => (item.id === saved.id ? saved : item)));
     return saved;
   };

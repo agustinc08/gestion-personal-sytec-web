@@ -136,6 +136,8 @@ export default function EmployeeDashboard({
   const [selectedCalendarDate, setSelectedCalendarDate] = useState(new Date().toISOString().split('T')[0]);
   const [isSavingWorkLog, setIsSavingWorkLog] = useState(false);
   const [editingWorkLogId, setEditingWorkLogId] = useState<string | null>(null);
+  const [isRefreshingDashboard, setIsRefreshingDashboard] = useState(false);
+  const [refreshMessage, setRefreshMessage] = useState('');
   const workLogFormRef = useRef<HTMLDivElement>(null);
 
   // Password change states
@@ -415,11 +417,11 @@ export default function EmployeeDashboard({
     triggerAlert('success', 'Solicitud de licencia enviada a la Administración para aprobación.');
   };
 
-  // Days calculations
-  // Días tomados: employee.licenseDaysTaken
-  // Días de guardia acumulados que compensan días: employee.guardiasDone
-  // Días restantes a tomar: (employee.totalLicenseDays + employee.guardiasDone) - employee.licenseDaysTaken
-  const remainingDaysToTake = employee.totalLicenseDays - employee.licenseDaysTaken;
+  const safeDayNumber = (value: unknown) => {
+    const numeric = Number(value) || 0;
+    return Object.is(numeric, -0) ? 0 : numeric;
+  };
+  const remainingDaysToTake = safeDayNumber(safeDayNumber(employee.totalLicenseDays) - safeDayNumber(employee.licenseDaysTaken));
 
   const todayStr = new Date().toISOString().split('T')[0];
   const hasLogToday = workLogs.some(log => log.employeeId === employee.id && log.date === todayStr);
@@ -591,7 +593,7 @@ export default function EmployeeDashboard({
           Mi Perfil ({employee.dependency})
         </button>
       </div>
-        {onRefresh && <button type="button" onClick={onRefresh} className="mb-2 self-start rounded-xl border bg-white px-3 py-2 text-xs font-bold text-slate-700 inline-flex items-center gap-2 lg:self-auto"><RefreshCw className="h-3.5 w-3.5 text-indigo-600" />Actualizar</button>}
+        {onRefresh && <div className="mb-2 flex flex-wrap items-center gap-2 self-start lg:self-auto"><button type="button" onClick={async () => { setIsRefreshingDashboard(true); setRefreshMessage(''); try { await Promise.resolve(onRefresh()); setRefreshMessage('Datos actualizados'); } catch { triggerAlert('error', 'No se pudieron actualizar los datos.'); } finally { setIsRefreshingDashboard(false); window.setTimeout(() => setRefreshMessage(''), 2500); } }} disabled={isRefreshingDashboard} className="rounded-xl border bg-white px-3 py-2 text-xs font-bold text-slate-700 inline-flex items-center gap-2 disabled:opacity-60"><RefreshCw className={`h-3.5 w-3.5 text-indigo-600 ${isRefreshingDashboard ? 'animate-spin' : ''}`} />Actualizar</button>{refreshMessage && <span className="rounded-lg bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">{refreshMessage}</span>}</div>}
       </div>
 
       {/* Main Content Areas */}
@@ -1710,7 +1712,7 @@ export default function EmployeeDashboard({
                     <div className="bg-white p-3.5 rounded-2xl border border-indigo-100 shadow-xs">
                       <span className="block text-[11px] uppercase tracking-wider text-indigo-600 font-bold pb-2 border-b">Días compensatorios por guardia</span>
                       <div className="flex items-baseline gap-1 mt-2">
-                        <span className="text-lg font-extrabold text-indigo-600">{employee.guardiasDone > 0 ? `${employee.guardiasDone} días disponibles` : 'Sin días compensatorios acumulados'}</span>
+                        <span className="text-lg font-extrabold text-indigo-600">{safeDayNumber(employee.guardiasDone) > 0 ? `${safeDayNumber(employee.guardiasDone)} d�as disponibles` : 'Sin d�as compensatorios acumulados'}</span>
                       </div>
                       <p className="text-[9px] text-indigo-450 mt-1">Saldo independiente de las licencias comunes.</p>
                     </div>
@@ -1718,7 +1720,7 @@ export default function EmployeeDashboard({
                     <div className="bg-white p-3.5 rounded-2xl border border-gray-150 shadow-xs">
                       <span className="block text-[11px] uppercase tracking-wider text-amber-700 font-bold pb-2 border-b">Días de licencia tomados</span>
                       <div className="flex items-baseline gap-1 mt-2">
-                        <span className="text-2xl font-extrabold text-amber-600 font-mono">-{employee.licenseDaysTaken}</span>
+                        <span className="text-2xl font-extrabold text-amber-600 font-mono">{safeDayNumber(employee.licenseDaysTaken)}</span>
                         <span className="text-[10px] text-amber-500 font-bold">d</span>
                       </div>
                       <p className="text-[9px] text-slate-450 mt-1">Gozados por Art. 14.</p>
@@ -1727,7 +1729,7 @@ export default function EmployeeDashboard({
                     <div className="bg-white p-3.5 rounded-2xl border-emerald-250 shadow-xs ring-2 ring-emerald-50 bg-emerald-50/15">
                       <span className="block text-[11px] uppercase tracking-wider text-emerald-800 font-extrabold pb-2 border-b">Saldo de licencia común</span>
                       <div className="flex items-baseline gap-1 mt-2">
-                        <span className="text-2xl font-black text-emerald-600 font-mono">{remainingDaysToTake}</span>
+                        <span className="text-2xl font-black text-emerald-600 font-mono">{safeDayNumber(remainingDaysToTake)}</span>
                         <span className="text-[10px] text-emerald-550 font-extrabold">d</span>
                       </div>
                       <p className="text-[9px] text-emerald-700 font-medium mt-1">Feria / Compensatorio disponible.</p>

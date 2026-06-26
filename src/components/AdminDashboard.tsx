@@ -309,6 +309,9 @@ export default function AdminDashboard({
   const [editTotalLicenseDays, setEditTotalLicenseDays] = useState(0);
   const [editRemoteDays, setEditRemoteDays] = useState<string[]>([]);
   const [editStrikeDutyOrder, setEditStrikeDutyOrder] = useState<number>(-1);
+  const [isSavingProfileEdit, setIsSavingProfileEdit] = useState(false);
+  const [isRefreshingDashboard, setIsRefreshingDashboard] = useState(false);
+  const [refreshMessage, setRefreshMessage] = useState('');
 
   // States for Editing a License Request
   const [editingLicenseId, setEditingLicenseId] = useState<string | null>(null);
@@ -385,38 +388,43 @@ export default function AdminDashboard({
     setEditPosition(emp.position || '');
     setEditTotalLicenseDays(emp.totalLicenseDays);
     setEditRemoteDays(emp.remoteDaysAssigned || []);
-    setEditStrikeDutyOrder(emp.strikeDutyOrder || -1);
+    setEditStrikeDutyOrder(emp.strikeDutyOrder ?? -1);
     setIsEditingProfile(true);
   };
 
-  const handleSaveProfileEdit = (e: React.FormEvent) => {
+  const handleSaveProfileEdit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedEmp) return;
+    if (!selectedEmp || isSavingProfileEdit) return;
     if (!editName.trim() || !editEmail.trim() || !editCuil.trim()) {
-      triggerAlert('error', 'Por favor, completá Nombre, Email y CUIL. La contraseña nueva es opcional.');
+      triggerAlert('error', 'Por favor, complet� Nombre, Email y CUIL. La contrase�a nueva es opcional.');
       return;
     }
 
-    const employeePayload: Employee = { ...selectedEmp };
-    delete (employeePayload as Partial<Employee>).password;
-
-    onUpdateEmployee({
-      ...employeePayload,
-      name: editName,
-      email: editEmail,
-      cuil: editCuil,
-      ...(editPassword.trim() ? { password: editPassword.trim() } : {}),
-      dependencyId: editDependency,
-      position: editPosition,
-      totalLicenseDays: editTotalLicenseDays,
-      remoteDaysAssigned: editRemoteDays,
-      strikeDutyOrder: editStrikeDutyOrder,
-    });
-
-    setIsEditingProfile(false);
-    triggerAlert('success', `¡Perfil de ${editName} actualizado con éxito en toda la red!`);
+    setIsSavingProfileEdit(true);
+    try {
+      await Promise.resolve(onUpdateEmployee({
+        ...selectedEmp,
+        name: editName.trim(),
+        email: editEmail.trim(),
+        cuil: editCuil.trim(),
+        ...(editPassword.trim() ? { password: editPassword.trim() } : {}),
+        dependencyId: editDependency,
+        position: editPosition.trim(),
+        totalLicenseDays: editTotalLicenseDays,
+        remoteDaysAssigned: editRemoteDays,
+        strikeDutyOrder: editStrikeDutyOrder,
+      }));
+      setIsEditingProfile(false);
+      setEditPassword('');
+      triggerAlert('success', `Perfil de ${editName.trim()} actualizado correctamente.`);
+      if (onRefresh) await Promise.resolve(onRefresh());
+    } catch (error: any) {
+      const message = error?.response?.data?.message;
+      triggerAlert('error', Array.isArray(message) ? message.join(' ') : message || 'No se pudo actualizar el perfil del agente.');
+    } finally {
+      setIsSavingProfileEdit(false);
+    }
   };
-
   const toggleEditRemoteDay = (day: string) => {
     if (editRemoteDays.includes(day)) {
       setEditRemoteDays(editRemoteDays.filter(d => d !== day));
@@ -514,8 +522,13 @@ export default function AdminDashboard({
   };
 
   // Calculations helper for employee remaining license days
+  const safeDayNumber = (value: unknown) => {
+    const numeric = Number(value) || 0;
+    return Object.is(numeric, -0) ? 0 : numeric;
+  };
+  const formatDays = (value: unknown) => `${safeDayNumber(value)}d`;
   const getRemainingDays = (emp: Employee) => {
-    return emp.totalLicenseDays - emp.licenseDaysTaken;
+    return safeDayNumber(safeDayNumber(emp.totalLicenseDays) - safeDayNumber(emp.licenseDaysTaken));
   };
 
   // Detail panel for a selected employee
@@ -1163,7 +1176,7 @@ export default function AdminDashboard({
           Mi Perfil
         </button>
       </div>
-      {onRefresh && <button type="button" onClick={onRefresh} className="mb-2 rounded-xl border bg-white px-3 py-2 text-xs font-bold text-slate-700 inline-flex items-center gap-2"><RefreshCw className="h-3.5 w-3.5 text-indigo-600" />Actualizar</button>}
+      {onRefresh && <div className="mb-2 flex flex-wrap items-center gap-2"><button type="button" onClick={async () => { setIsRefreshingDashboard(true); setRefreshMessage(''); try { await Promise.resolve(onRefresh()); setRefreshMessage('Datos actualizados'); } catch { triggerAlert('error', 'No se pudieron actualizar los datos.'); } finally { setIsRefreshingDashboard(false); window.setTimeout(() => setRefreshMessage(''), 2500); } }} disabled={isRefreshingDashboard} className="rounded-xl border bg-white px-3 py-2 text-xs font-bold text-slate-700 inline-flex items-center gap-2 disabled:opacity-60"><RefreshCw className={`h-3.5 w-3.5 text-indigo-600 ${isRefreshingDashboard ? 'animate-spin' : ''}`} />Actualizar</button>{refreshMessage && <span className="rounded-lg bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">{refreshMessage}</span>}</div>}
       </div>
 
       {/* Main Admin Contents */}
@@ -1379,9 +1392,10 @@ export default function AdminDashboard({
                         </button>
                         <button
                           type="submit"
-                          className="cursor-pointer bg-slate-950 hover:bg-red-650 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition-all shadow-md"
+                          disabled={isSavingProfileEdit}
+                          className="cursor-pointer bg-slate-950 hover:bg-red-650 disabled:bg-slate-400 disabled:cursor-not-allowed text-white font-bold text-xs px-5 py-2.5 rounded-xl transition-all shadow-md"
                         >
-                          Guardar Perfil
+                          {isSavingProfileEdit ? 'Guardando...' : 'Guardar Perfil'}
                         </button>
                       </div>
                     </form>
@@ -1447,12 +1461,12 @@ export default function AdminDashboard({
                           <span className="text-[9px] uppercase text-gray-400 font-bold block">Días compensatorios por guardia</span>
                           <span className="mt-1 block text-[10px] font-bold text-slate-500">Saldo actual</span>
                           <strong className="block text-lg font-black text-indigo-700">{selectedEmp.guardiasDone} días</strong>
-                          <span className="mt-1 block text-[10px] font-semibold text-slate-500">{compensatoryText(selectedEmp.guardiasDone)}</span>
+                          <span className="mt-1 block text-[10px] font-semibold text-slate-500">{compensatoryText(safeDayNumber(selectedEmp.guardiasDone))}</span>
                           {onAdjustCompensatoryDays && (
                             <button
                               type="button"
                               onClick={() => {
-                                const value = window.prompt('Saldo compensatorio del agente:', String(selectedEmp.guardiasDone));
+                                const value = window.prompt('Saldo compensatorio del agente:', String(safeDayNumber(selectedEmp.guardiasDone)));
                                 if (value === null) return; const days = Number(value);
                                 if (!Number.isInteger(days) || days < 0) { triggerAlert('error', 'Ingresá una cantidad válida de días.'); return; }
                                 if (!window.confirm('¿Seguro que querés ajustar los días compensatorios de este agente? Esta acción quedará registrada en auditoría.')) return;
@@ -1466,11 +1480,11 @@ export default function AdminDashboard({
                         </div>
                         <div>
                           <span className="text-[9px] uppercase text-gray-400 font-bold block">Días de licencia tomados</span>
-                          <span className="text-md font-bold font-mono text-amber-600">-{selectedEmp.licenseDaysTaken}d</span>
+                          <span className="text-md font-bold font-mono text-amber-600">{formatDays(selectedEmp.licenseDaysTaken)}</span>
                         </div>
                         <div>
                           <span className="text-[9px] uppercase text-gray-400 font-bold block">Saldo de licencia</span>
-                          <span className="text-md font-bold font-mono text-emerald-600">{getRemainingDays(selectedEmp)}d</span>
+                          <span className="text-md font-bold font-mono text-emerald-600">{formatDays(getRemainingDays(selectedEmp))}</span>
                         </div>
                       </div>
 
@@ -2226,7 +2240,7 @@ export default function AdminDashboard({
                   >
                     {employees.map((emp) => (
                       <option key={emp.id} value={emp.id}>
-                        {emp.name} (Restan: {getRemainingDays(emp)}d)
+                        {emp.name} (Restan: {formatDays(getRemainingDays(emp))})
                       </option>
                     ))}
                   </select>

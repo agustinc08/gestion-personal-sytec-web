@@ -18,7 +18,7 @@ import HelpPanel from './components/HelpPanel';
 import AnnouncementBanner from './components/AnnouncementBanner';
 import { APP_NAME, APP_UPDATED_AT, APP_VERSION } from './config/app';
 import { DEPENDENCIES, INITIAL_STRIKE_CONFIG, LAWS_ARTICLES_RULES } from './data/mockData';
-import { Announcement, CreateEmployeePayload, Dependency, Employee, LicenseArticle, LicenseRequest, LicenseRule, Project, ProjectUpdate, StrikeConfig, UpdateEmployeePayload, WorkLog } from './types';
+import { Announcement, CreateEmployeePayload, DailyAttendance, Dependency, Employee, LicenseArticle, LicenseRequest, LicenseRule, Project, ProjectUpdate, StrikeConfig, UpdateEmployeePayload, WorkLog } from './types';
 
 function SessionAvatar({ src, name }: { src?: string; name: string }) {
   const [imageFailed, setImageFailed] = useState(false);
@@ -46,6 +46,7 @@ function SessionAvatar({ src, name }: { src?: string; name: string }) {
 export default function App() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [workLogs, setWorkLogs] = useState<WorkLog[]>([]);
+  const [dailyAttendances, setDailyAttendances] = useState<DailyAttendance[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [licenseRequests, setLicenseRequests] = useState<LicenseRequest[]>([]);
   const [licenseRules, setLicenseRules] = useState<LicenseRule[]>(LAWS_ARTICLES_RULES);
@@ -67,11 +68,12 @@ export default function App() {
     if (!options.silent) setIsRefreshing(true);
     try {
       const isAdmin = user.role === 'ADMIN';
-      const [employeeRows, projectRows, licenseRows, workLogRows, rules, articleRows, strike, dependencyRows, announcementRows] = await Promise.all([
+      const [employeeRows, projectRows, licenseRows, workLogRows, attendanceRows, rules, articleRows, strike, dependencyRows, announcementRows] = await Promise.all([
         isAdmin ? employeesApi.all() : employeesApi.me().then((me) => [me]),
         isAdmin ? projectsApi.all() : projectsApi.my(),
         isAdmin ? licensesApi.all() : licensesApi.my(),
         isAdmin ? worklogsApi.all() : worklogsApi.my(),
+        worklogsApi.attendance(),
         licensesApi.rules().catch(() => LAWS_ARTICLES_RULES),
         licensesApi.rules().then(() => licenseArticlesApi.all(isAdmin)).catch(() => []),
         strikeApi.config(),
@@ -82,6 +84,7 @@ export default function App() {
       setProjects(projectRows);
       setLicenseRequests(licenseRows);
       setWorkLogs(workLogRows);
+      setDailyAttendances(attendanceRows);
       setLicenseRules(rules);
       setLicenseArticles(articleRows);
       setStrikeConfig(strike);
@@ -202,6 +205,13 @@ export default function App() {
   const handleAddWorkLog = async (newLogData: Omit<WorkLog, 'id'>) => {
     const saved = await worklogsApi.create(cleanWorkLogTimePayload(newLogData));
     setWorkLogs((prev) => [saved, ...prev]);
+    void refreshData(undefined, { silent: true });
+    return saved;
+  };
+
+  const handleSaveAttendance = async (payload: Partial<DailyAttendance> & { date: string }) => {
+    const saved = await worklogsApi.saveAttendance(payload);
+    setDailyAttendances((prev) => [saved, ...prev.filter((row) => !(row.employeeId === saved.employeeId && String(row.date).slice(0, 10) === String(saved.date).slice(0, 10)))]);
     void refreshData(undefined, { silent: true });
     return saved;
   };
@@ -419,6 +429,7 @@ export default function App() {
     setEmployees([]);
     setProjects([]);
     setWorkLogs([]);
+    setDailyAttendances([]);
     setLicenseRequests([]);
     void refreshData(undefined, { silent: true });
   };
@@ -494,6 +505,7 @@ export default function App() {
           <AdminDashboard
             employees={processedEmployees}
             workLogs={workLogs}
+            dailyAttendances={dailyAttendances}
             projects={projects}
             licenseRequests={licenseRequests}
             licenseRules={licenseRules}
@@ -537,12 +549,14 @@ export default function App() {
             employee={currentEmployee}
             employees={processedEmployees}
             workLogs={workLogs}
+            dailyAttendances={dailyAttendances}
             projects={projects}
             licenseRequests={licenseRequests}
             licenseRules={licenseRules}
             strikeConfig={strikeConfig}
             onAddWorkLog={handleAddWorkLog}
             onUpdateWorkLog={handleUpdateWorkLog}
+            onSaveAttendance={handleSaveAttendance}
             onUpdateProject={handleUpdateProject}
             onAddProjectUpdate={handleAddProjectUpdate}
             onAddLicenseRequest={handleAddLicenseRequest}

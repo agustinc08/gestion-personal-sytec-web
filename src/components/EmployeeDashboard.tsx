@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { statisticsApi } from '../api/statistics.api';
-import { Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, ActivityType, StatisticsResponse } from '../types';
+import { DailyAttendance, Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, ActivityType, StatisticsResponse } from '../types';
 import { activityTypeLabel, deploymentEnvironmentLabel, deploymentStatusLabel, difficultyLabel, licenseStatusLabel, projectStatusLabel } from '../utils/labels';
 import {
   Calendar, CheckCircle, FileText, User, Briefcase, Plus, Clock, 
@@ -14,12 +14,14 @@ interface EmployeeDashboardProps {
   employee: Employee;
   employees: Employee[];
   workLogs: WorkLog[];
+  dailyAttendances: DailyAttendance[];
   projects: Project[];
   licenseRequests: LicenseRequest[];
   licenseRules: LicenseRule[];
   strikeConfig: StrikeConfig;
   onAddWorkLog: (log: Omit<WorkLog, 'id'>) => Promise<WorkLog> | WorkLog;
   onUpdateWorkLog: (id: string, payload: Partial<WorkLog>) => Promise<WorkLog>;
+  onSaveAttendance: (payload: Partial<DailyAttendance> & { date: string }) => Promise<DailyAttendance>;
   onUpdateProject?: (proj: Project) => void;
   onAddProjectUpdate?: (projectId: string, update: string | (Partial<ProjectUpdate> & { content: string })) => Promise<Project> | void;
   onAddLicenseRequest: (req: Omit<LicenseRequest, 'id' | 'status' | 'dateRequested'>) => any;
@@ -35,12 +37,14 @@ export default function EmployeeDashboard({
   employee,
   employees,
   workLogs,
+  dailyAttendances,
   projects,
   licenseRequests,
   licenseRules,
   strikeConfig,
   onAddWorkLog,
   onUpdateWorkLog,
+  onSaveAttendance,
   onUpdateProject,
   onAddProjectUpdate,
   onAddLicenseRequest,
@@ -123,8 +127,10 @@ export default function EmployeeDashboard({
   const [logProjectId, setLogProjectId] = useState('');
   const [logActivityType, setLogActivityType] = useState<ActivityType>('PROJECT');
   const [logHours, setLogHours] = useState('');
-  const [logEntryTime, setLogEntryTime] = useState('');
-  const [logExitTime, setLogExitTime] = useState('');
+  const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().split('T')[0]);
+  const [attendanceEntryTime, setAttendanceEntryTime] = useState('');
+  const [attendanceExitTime, setAttendanceExitTime] = useState('');
+  const [isSavingAttendance, setIsSavingAttendance] = useState(false);
   const [overrideDate, setOverrideDate] = useState(false);
   const [logDate, setLogDate] = useState(new Date().toISOString().split('T')[0]);
   const [dailyView, setDailyView] = useState<'list' | 'calendar'>('list');
@@ -226,12 +232,37 @@ export default function EmployeeDashboard({
     mode === 'mixto' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
     'bg-purple-50 text-purple-700 border-purple-100'
   );
-  const formatWorkLogTime = (log: WorkLog) => (log.entryTime || log.exitTime) ? `Horario: ${log.entryTime || '--:--'} a ${log.exitTime || '--:--'}` : '';
+  const dayKey = (value?: string) => String(value || '').slice(0, 10);
+  const formatAttendanceTime = (attendance?: DailyAttendance) => (attendance?.entryTime || attendance?.exitTime) ? `Horario: ${attendance.entryTime || '--:--'} a ${attendance.exitTime || '--:--'}` : '';
+  const attendanceByDate = React.useMemo(() => Object.fromEntries(dailyAttendances.filter((row) => row.employeeId === employee.id).map((row) => [dayKey(row.date), row])), [dailyAttendances, employee.id]);
   const toLocalDateInput = (date: Date) => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
+  };
+  useEffect(() => {
+    const current = attendanceByDate[attendanceDate];
+    setAttendanceEntryTime(current?.entryTime || '');
+    setAttendanceExitTime(current?.exitTime || '');
+  }, [attendanceByDate, attendanceDate]);
+
+  const handleAttendanceSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (attendanceEntryTime && attendanceExitTime && attendanceExitTime < attendanceEntryTime) {
+      triggerAlert('error', 'La hora de salida no puede ser anterior a la hora de entrada.');
+      return;
+    }
+    setIsSavingAttendance(true);
+    try {
+      await onSaveAttendance({ date: attendanceDate, entryTime: attendanceEntryTime || undefined, exitTime: attendanceExitTime || undefined });
+      triggerAlert('success', 'Horario de jornada actualizado.');
+    } catch (error: any) {
+      const message = error?.response?.data?.message;
+      triggerAlert('error', Array.isArray(message) ? message.join(' ') : message || 'No se pudo guardar el horario de jornada.');
+    } finally {
+      setIsSavingAttendance(false);
+    }
   };
   const dailyFilteredLogs = myWorkLogs.filter((log) => (
     String(new Date(`${log.date}T00:00:00`).getFullYear()) === dailyYear &&
@@ -267,10 +298,10 @@ export default function EmployeeDashboard({
     workLogFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
   const resetWorkLogForm = () => {
-    setEditingWorkLogId(null); setLogTitle(''); setLogDescription(''); setLogMode('presencial'); setLogProjectId(''); setLogActivityType('PROJECT'); setLogHours(''); setLogEntryTime(''); setLogExitTime(''); setOverrideDate(false); setLogDate(new Date().toISOString().split('T')[0]);
+    setEditingWorkLogId(null); setLogTitle(''); setLogDescription(''); setLogMode('presencial'); setLogProjectId(''); setLogActivityType('PROJECT'); setLogHours(''); setOverrideDate(false); setLogDate(new Date().toISOString().split('T')[0]);
   };
   const editWorkLog = (log: WorkLog) => {
-    setEditingWorkLogId(log.id); setLogTitle(log.title); setLogDescription(log.description); setLogMode(log.mode); setLogProjectId(log.projectId || ''); setLogActivityType(log.activityType || 'PROJECT'); setLogHours(log.hours === undefined ? '' : String(log.hours)); setLogEntryTime(log.entryTime || ''); setLogExitTime(log.exitTime || ''); setLogDate(log.date); setOverrideDate(true); workLogFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setEditingWorkLogId(log.id); setLogTitle(log.title); setLogDescription(log.description); setLogMode(log.mode); setLogProjectId(log.projectId || ''); setLogActivityType(log.activityType || 'PROJECT'); setLogHours(log.hours === undefined ? '' : String(log.hours)); setLogDate(log.date); setOverrideDate(true); workLogFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
   const getDeadlineLabel = (project: Project) => {
     if (!project.deadline) return 'Sin fecha límite';
@@ -347,11 +378,6 @@ export default function EmployeeDashboard({
       return;
     }
 
-    if (logEntryTime && logExitTime && logExitTime < logEntryTime) {
-      triggerAlert('error', 'La hora de salida no puede ser anterior a la hora de entrada.');
-      return;
-    }
-
     const submittedTitle = logTitle;
     const submittedProjectId = logProjectId;
     const submittedDate = overrideDate ? logDate : new Date().toISOString().split('T')[0];
@@ -366,8 +392,6 @@ export default function EmployeeDashboard({
         mode: logMode,
         activityType: logActivityType,
         hours: logHours ? Number(logHours) : undefined,
-        ...(logEntryTime ? { entryTime: logEntryTime } : {}),
-        ...(logExitTime ? { exitTime: logExitTime } : {}),
       };
       if (editingWorkLogId) await onUpdateWorkLog(editingWorkLogId, payload);
       else await Promise.resolve(onAddWorkLog(payload));
@@ -601,12 +625,30 @@ export default function EmployeeDashboard({
         {/* TAB 1: CARGA DIARIA & HISTORIAL */}
         {activeTab === 'carga_diaria' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <div className="lg:col-span-5 bg-white p-6 rounded-2xl border border-gray-150 shadow-sm self-start">
+              <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2"><Clock className="w-5 h-5 text-indigo-600" /> Horario de jornada</h3>
+              <form onSubmit={handleAttendanceSubmit} className="space-y-3">
+                <label className="block text-[10px] font-bold uppercase text-slate-500">Fecha
+                  <input type="date" value={attendanceDate} onChange={(event) => setAttendanceDate(event.target.value)} max={new Date().toISOString().split('T')[0]} className="mt-1 w-full rounded-xl border px-3 py-2 text-xs" />
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="text-[10px] font-bold uppercase text-slate-500">Entrada
+                    <input type="time" value={attendanceEntryTime} onChange={(event) => setAttendanceEntryTime(event.target.value)} className="mt-1 w-full rounded-xl border px-3 py-2 text-xs" />
+                  </label>
+                  <label className="text-[10px] font-bold uppercase text-slate-500">Salida
+                    <input type="time" value={attendanceExitTime} onChange={(event) => setAttendanceExitTime(event.target.value)} className="mt-1 w-full rounded-xl border px-3 py-2 text-xs" />
+                  </label>
+                </div>
+                <button type="submit" disabled={isSavingAttendance} className="w-full rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-bold text-white disabled:opacity-60">{isSavingAttendance ? 'Guardando horario...' : 'Guardar horario'}</button>
+              </form>
+            </div>
+
             {/* Form Input */}
             <div ref={workLogFormRef} className="lg:col-span-5 bg-white p-6 rounded-2xl border border-gray-150 shadow-sm self-start">
               <h3 className="text-lg font-bold text-gray-900 mb-5 flex items-center gap-2">
                 <Plus className="w-5 h-5 text-indigo-600" /> {editingWorkLogId ? 'Editar parte diario' : 'Cargar Trabajo Diario'}
               </h3>
-              {hasLogToday && !editingWorkLogId && <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800">Ya cargaste tu parte diario de hoy. Podés editarlo. <button type="button" onClick={() => { const today = myWorkLogs.find((log) => log.date === todayStr); if (today) editWorkLog(today); }} className="ml-1 font-bold underline">Editar parte de hoy</button></div>}
+              {hasLogToday && !editingWorkLogId && <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800">Ya cargaste al menos una actividad hoy. Pod�s registrar otra carga si hiciste m�s tareas.</div>}
               
               <form onSubmit={handleLogSubmit} className="space-y-4">
                 <div>
@@ -701,18 +743,6 @@ export default function EmployeeDashboard({
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Horario del día (opcional)</p>
-                  <div className="mt-2 grid grid-cols-2 gap-3">
-                    <label className="text-[10px] font-bold text-slate-600">Entrada
-                      <input type="time" value={logEntryTime} onChange={(e) => setLogEntryTime(e.target.value)} className="mt-1 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs font-normal" />
-                    </label>
-                    <label className="text-[10px] font-bold text-slate-600">Salida
-                      <input type="time" value={logExitTime} onChange={(e) => setLogExitTime(e.target.value)} className="mt-1 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs font-normal" />
-                    </label>
-                  </div>
-                </div>
-
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
                     Modalidad del Día
@@ -786,7 +816,7 @@ export default function EmployeeDashboard({
 
                 <div className="flex gap-2">
                   <button type="submit" disabled={isSavingWorkLog} className="flex-1 cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm py-3.5 px-4 rounded-xl transition-all shadow-md disabled:opacity-60">
-                    {isSavingWorkLog ? 'Guardando...' : editingWorkLogId ? 'Guardar cambios' : 'Registrar Jornada Laboral'}
+                    {isSavingWorkLog ? 'Guardando...' : editingWorkLogId ? 'Guardar cambios' : 'Registrar actividad'}
                   </button>
                   {editingWorkLogId && <button type="button" onClick={resetWorkLogForm} className="rounded-xl border px-4 text-xs font-bold">Cancelar edición</button>}
                 </div>
@@ -899,7 +929,7 @@ export default function EmployeeDashboard({
                           {linkedProject && <span className="bg-emerald-50 border border-emerald-100 text-emerald-700 rounded px-2 py-1">{linkedProject.name}</span>}
                           {log.activityType && <span className="bg-indigo-50 border border-indigo-100 text-indigo-700 rounded px-2 py-1">{activityTypeLabel(log.activityType)}</span>}
                           {log.hours !== undefined && <span className="bg-slate-50 border border-slate-200 text-slate-700 rounded px-2 py-1">{log.hours} h</span>}
-                          {formatWorkLogTime(log) && <span className="bg-blue-50 border border-blue-100 text-blue-700 rounded px-2 py-1">{formatWorkLogTime(log)}</span>}
+                          {formatAttendanceTime(attendanceByDate[dayKey(log.date)]) && <span className="bg-blue-50 border border-blue-100 text-blue-700 rounded px-2 py-1">{formatAttendanceTime(attendanceByDate[dayKey(log.date)])}</span>}
                           <button type="button" onClick={() => editWorkLog(log)} className="ml-auto rounded border border-indigo-200 bg-indigo-50 px-2 py-1 text-indigo-700">Editar</button>
                         </div>
                       </div>

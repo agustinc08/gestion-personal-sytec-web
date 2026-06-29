@@ -52,6 +52,15 @@ export interface WorkLog {
   exitTime?: string;
 }
 
+
+export interface DailyAttendance {
+  id: string;
+  employeeId: string;
+  date: string;
+  entryTime?: string;
+  exitTime?: string;
+  updatedAt?: string;
+}
 export interface ProjectUpdate {
   id: string;
   authorName: string;

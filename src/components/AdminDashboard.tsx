@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { statisticsApi } from '../api/statistics.api';
-import { CreateEmployeePayload, Dependency, Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, LicenseArticle, ActivityType, StatisticsResponse } from '../types';
+import { CreateEmployeePayload, DailyAttendance, Dependency, Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, LicenseArticle, ActivityType, StatisticsResponse } from '../types';
 import { activityTypeLabel, deploymentEnvironmentLabel, deploymentStatusLabel, difficultyLabel, licenseStatusLabel, projectStatusLabel, statColumnLabel } from '../utils/labels';
 import { 
   Users, Calendar, Briefcase, Plus, Check, X, FileText, 
@@ -16,6 +16,7 @@ import AnnouncementAdmin from './AnnouncementAdmin';
 interface AdminDashboardProps {
   employees: Employee[];
   workLogs: WorkLog[];
+  dailyAttendances: DailyAttendance[];
   projects: Project[];
   licenseRequests: LicenseRequest[];
   licenseRules: LicenseRule[];
@@ -58,6 +59,7 @@ interface AdminDashboardProps {
 export default function AdminDashboard({
   employees,
   workLogs,
+  dailyAttendances,
   projects,
   licenseRequests,
   licenseRules,
@@ -176,7 +178,17 @@ export default function AdminDashboard({
   const splitTechStack = (value?: string) => (value || '').split(/[,;/|]+/).map((item) => item.trim()).filter(Boolean);
   const compactTechStack = (value?: string) => splitTechStack(value).slice(0, 4);
   const compensatoryText = (days: number) => days === 0 ? 'Sin días compensatorios acumulados' : days === 1 ? '1 día disponible' : `${days} días disponibles`;
-  const workLogTimeText = (log: WorkLog) => (log.entryTime || log.exitTime) ? `Horario: ${log.entryTime || '--:--'} a ${log.exitTime || '--:--'}` : '';
+  const attendanceByEmployeeDate = React.useMemo(() => {
+    const rows: Record<string, DailyAttendance> = {};
+    dailyAttendances.forEach((row) => {
+      rows[`${row.employeeId}:${String(row.date).slice(0, 10)}`] = row;
+    });
+    return rows;
+  }, [dailyAttendances]);
+  const workLogTimeText = (log: WorkLog) => {
+    const attendance = attendanceByEmployeeDate[`${log.employeeId}:${String(log.date).slice(0, 10)}`];
+    return (attendance?.entryTime || attendance?.exitTime) ? `Horario: ${attendance.entryTime || '--:--'} a ${attendance.exitTime || '--:--'}` : '';
+  };
 
   // Selected employee detail state
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(employees[0]?.id || null);

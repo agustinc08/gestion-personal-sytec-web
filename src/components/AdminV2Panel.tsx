@@ -95,7 +95,10 @@ function ExecutiveSummary() {
           const visibleDescription = isLong && !isExpanded ? `${description.slice(0, 220).trim()}...` : description;
           const techs = splitTechStack(log.projectTechStack).slice(0, 4);
           const projectText = log.projectName || log.title || 'Sin proyecto vinculado';
-          const timeText = log.entryTime || log.exitTime ? `${log.entryTime || '--:--'} a ${log.exitTime || '--:--'}` : '';
+          const attendance = log.attendance || row.attendance;
+          const timeText = attendance?.entryTime || attendance?.exitTime
+            ? `${attendance.entryTime || '--:--'} a ${attendance.exitTime || '--:--'}`
+            : (log.entryTime || log.exitTime ? `${log.entryTime || '--:--'} a ${log.exitTime || '--:--'}` : '');
           return <article key={rowKey} className="rounded-xl border border-slate-200 bg-white p-4 text-xs shadow-sm">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div className="min-w-0">

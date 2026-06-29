@@ -624,10 +624,12 @@ export default function EmployeeDashboard({
       <div className="grid grid-cols-1 gap-8">
         {/* TAB 1: CARGA DIARIA & HISTORIAL */}
         {activeTab === 'carga_diaria' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            <div className="lg:col-span-5 bg-white p-6 rounded-2xl border border-gray-150 shadow-sm self-start">
-              <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2"><Clock className="w-5 h-5 text-indigo-600" /> Horario de jornada</h3>
-              <form onSubmit={handleAttendanceSubmit} className="space-y-3">
+          <div className="space-y-8">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              <div className="lg:col-span-4 bg-white p-6 rounded-2xl border border-gray-150 shadow-sm self-start h-full">
+                <h3 className="text-lg font-bold text-gray-900 mb-2 flex items-center gap-2"><Clock className="w-5 h-5 text-indigo-600" /> Horario de jornada</h3>
+                <p className="mb-4 text-xs text-slate-500">Opcional y separado de las actividades. Se guarda una vez por día.</p>
+                <form onSubmit={handleAttendanceSubmit} className="space-y-3">
                 <label className="block text-[10px] font-bold uppercase text-slate-500">Fecha
                   <input type="date" value={attendanceDate} onChange={(event) => setAttendanceDate(event.target.value)} max={new Date().toISOString().split('T')[0]} className="mt-1 w-full rounded-xl border px-3 py-2 text-xs" />
                 </label>
@@ -644,11 +646,12 @@ export default function EmployeeDashboard({
             </div>
 
             {/* Form Input */}
-            <div ref={workLogFormRef} className="lg:col-span-5 bg-white p-6 rounded-2xl border border-gray-150 shadow-sm self-start">
-              <h3 className="text-lg font-bold text-gray-900 mb-5 flex items-center gap-2">
-                <Plus className="w-5 h-5 text-indigo-600" /> {editingWorkLogId ? 'Editar parte diario' : 'Cargar Trabajo Diario'}
+              <div ref={workLogFormRef} className="lg:col-span-8 bg-white p-6 rounded-2xl border border-gray-150 shadow-sm self-start">
+              <h3 className="text-lg font-bold text-gray-900 mb-2 flex items-center gap-2">
+                <Plus className="w-5 h-5 text-indigo-600" /> {editingWorkLogId ? 'Editar parte diario' : 'Cargar actividad / trabajo diario'}
               </h3>
-              {hasLogToday && !editingWorkLogId && <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800">Ya cargaste al menos una actividad hoy. Pod�s registrar otra carga si hiciste m�s tareas.</div>}
+              <p className="mb-5 text-xs text-slate-500">Podés registrar varias actividades en el mismo día. Cada carga representa una tarea puntual.</p>
+              {hasLogToday && !editingWorkLogId && <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800">Ya cargaste al menos una actividad hoy. Podés registrar otra si hiciste más tareas.</div>}
               
               <form onSubmit={handleLogSubmit} className="space-y-4">
                 <div>
@@ -823,13 +826,14 @@ export default function EmployeeDashboard({
               </form>
             </div>
 
+            </div>
             {/* History of Worklogs */}
-            <div className="lg:col-span-7 space-y-4">
+            <div className="space-y-4">
               <div className="bg-white border border-gray-150 rounded-2xl p-4 shadow-sm space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
-                    <h3 className="text-lg font-bold text-gray-900">Historial de Registros</h3>
-                    <p className="text-xs text-slate-500">Lista y calendario usan los mismos partes cargados.</p>
+                    <h3 className="text-lg font-bold text-gray-900">Historial de registros</h3>
+                    <p className="text-xs text-slate-500">Todas tus actividades cargadas, con vista de lista y calendario.</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
@@ -940,8 +944,8 @@ export default function EmployeeDashboard({
               ))}
 
               {dailyView === 'calendar' && (
-                <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
-                  <div className="xl:col-span-8 bg-white border border-gray-150 rounded-2xl p-4 shadow-sm">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                  <div className="lg:col-span-8 bg-white border border-gray-150 rounded-2xl p-4 shadow-sm">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                       <h4 className="text-sm font-black text-slate-900 capitalize">{monthTitle}</h4>
                       <div className="flex items-center gap-2">
@@ -989,7 +993,7 @@ export default function EmployeeDashboard({
                     </div>
                   </div>
 
-                  <div className="xl:col-span-4 bg-white border border-gray-150 rounded-2xl p-4 shadow-sm">
+                  <div className="lg:col-span-4 bg-white border border-gray-150 rounded-2xl p-4 shadow-sm">
                     <div className="flex items-start justify-between gap-2 mb-3">
                       <div>
                         <h4 className="text-sm font-black text-slate-900">Día seleccionado</h4>
@@ -1742,7 +1746,7 @@ export default function EmployeeDashboard({
                     <div className="bg-white p-3.5 rounded-2xl border border-indigo-100 shadow-xs">
                       <span className="block text-[11px] uppercase tracking-wider text-indigo-600 font-bold pb-2 border-b">Días compensatorios por guardia</span>
                       <div className="flex items-baseline gap-1 mt-2">
-                        <span className="text-lg font-extrabold text-indigo-600">{safeDayNumber(employee.guardiasDone) > 0 ? `${safeDayNumber(employee.guardiasDone)} d�as disponibles` : 'Sin d�as compensatorios acumulados'}</span>
+                        <span className="text-lg font-extrabold text-indigo-600">{safeDayNumber(employee.guardiasDone) > 0 ? `${safeDayNumber(employee.guardiasDone)} días disponibles` : 'Sin días compensatorios acumulados'}</span>
                       </div>
                       <p className="text-[9px] text-indigo-450 mt-1">Saldo independiente de las licencias comunes.</p>
                     </div>

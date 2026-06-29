@@ -408,7 +408,7 @@ export default function AdminDashboard({
     e.preventDefault();
     if (!selectedEmp || isSavingProfileEdit) return;
     if (!editName.trim() || !editEmail.trim() || !editCuil.trim()) {
-      triggerAlert('error', 'Por favor, complet· Nombre, Email y CUIL. La contraseÒa nueva es opcional.');
+      triggerAlert('error', 'Por favor, complet√° Nombre, Email y CUIL. La contrase√±a nueva es opcional.');
       return;
     }
 

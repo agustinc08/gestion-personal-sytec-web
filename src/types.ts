@@ -37,11 +37,34 @@ export type UpdateEmployeePayload = Partial<Omit<CreateEmployeePayload, 'passwor
   password: string;
   isAdmin: boolean;
 }>;
+export interface SecondaryWorkItem {
+  id: string;
+  name: string;
+  normalizedName?: string;
+  description?: string;
+  status: 'ACTIVE' | 'ARCHIVED';
+  firstSeenAt?: string;
+  lastActivityAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  createdById?: string;
+  lastEmployeeId?: string;
+  lastEmployeeName?: string;
+  workLogsCount: number;
+  employeeNames: string[];
+  employeeIds?: string[];
+}
+
 export interface WorkLog {
   id: string;
   employeeId: string;
   projectId?: string;
   projectName?: string;
+  secondaryWorkItemId?: string;
+  secondaryWorkItemName?: string;
+  secondaryWorkItemNameInput?: string;
+  workItemType?: 'PROJECT' | 'SECONDARY' | 'FREE_TEXT';
+  displayTitle?: string;
   title: string;
   description: string;
   date: string; // YYYY-MM-DD

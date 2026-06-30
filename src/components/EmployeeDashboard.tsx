@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { statisticsApi } from '../api/statistics.api';
-import { DailyAttendance, Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, ActivityType, StatisticsResponse } from '../types';
+import { DailyAttendance, Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, ActivityType, StatisticsResponse, SecondaryWorkItem } from '../types';
 import { activityTypeLabel, deploymentEnvironmentLabel, deploymentStatusLabel, difficultyLabel, licenseStatusLabel, projectStatusLabel } from '../utils/labels';
 import { getArgentinaTodayDateOnly } from '../utils/date';
 import {
@@ -17,6 +17,7 @@ interface EmployeeDashboardProps {
   workLogs: WorkLog[];
   dailyAttendances: DailyAttendance[];
   projects: Project[];
+  secondaryWorkItems: SecondaryWorkItem[];
   licenseRequests: LicenseRequest[];
   licenseRules: LicenseRule[];
   strikeConfig: StrikeConfig;
@@ -40,6 +41,7 @@ export default function EmployeeDashboard({
   workLogs,
   dailyAttendances,
   projects,
+  secondaryWorkItems,
   licenseRequests,
   licenseRules,
   strikeConfig,
@@ -126,6 +128,9 @@ export default function EmployeeDashboard({
   const [logDescription, setLogDescription] = useState('');
   const [logMode, setLogMode] = useState<WorkLog['mode']>('presencial');
   const [logProjectId, setLogProjectId] = useState('');
+  const [workItemType, setWorkItemType] = useState<'PROJECT' | 'SECONDARY'>('PROJECT');
+  const [secondaryWorkItemId, setSecondaryWorkItemId] = useState('');
+  const [secondaryWorkItemName, setSecondaryWorkItemName] = useState('');
   const [logActivityType, setLogActivityType] = useState<ActivityType>('PROJECT');
   const [logHours, setLogHours] = useState('');
   const [attendanceDate, setAttendanceDate] = useState(getArgentinaTodayDateOnly());
@@ -299,10 +304,10 @@ export default function EmployeeDashboard({
     workLogFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
   const resetWorkLogForm = () => {
-    setEditingWorkLogId(null); setLogTitle(''); setLogDescription(''); setLogMode('presencial'); setLogProjectId(''); setLogActivityType('PROJECT'); setLogHours(''); setOverrideDate(false); setLogDate(getArgentinaTodayDateOnly());
+    setEditingWorkLogId(null); setLogTitle(''); setLogDescription(''); setLogMode('presencial'); setLogProjectId(''); setWorkItemType('PROJECT'); setSecondaryWorkItemId(''); setSecondaryWorkItemName(''); setLogActivityType('PROJECT'); setLogHours(''); setOverrideDate(false); setLogDate(getArgentinaTodayDateOnly());
   };
   const editWorkLog = (log: WorkLog) => {
-    setEditingWorkLogId(log.id); setLogTitle(log.title); setLogDescription(log.description); setLogMode(log.mode); setLogProjectId(log.projectId || ''); setLogActivityType(log.activityType || 'PROJECT'); setLogHours(log.hours === undefined ? '' : String(log.hours)); setLogDate(log.date); setOverrideDate(true); workLogFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setEditingWorkLogId(log.id); setLogTitle(log.title); setLogDescription(log.description); setLogMode(log.mode); setLogProjectId(log.projectId || ''); setWorkItemType(log.secondaryWorkItemId ? 'SECONDARY' : 'PROJECT'); setSecondaryWorkItemId(log.secondaryWorkItemId || ''); setSecondaryWorkItemName(log.secondaryWorkItemName || ''); setLogActivityType(log.activityType || 'PROJECT'); setLogHours(log.hours === undefined ? '' : String(log.hours)); setLogDate(log.date); setOverrideDate(true); workLogFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
   const getDeadlineLabel = (project: Project) => {
     if (!project.deadline) return 'Sin fecha límite';
@@ -375,18 +380,27 @@ export default function EmployeeDashboard({
   const handleLogSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!logTitle.trim() || !logDescription.trim()) {
-      triggerAlert('error', 'Por favor, completa el título y la descripción del trabajo.');
+      triggerAlert('error', 'Por favor, completá el título y la descripción del trabajo.');
       return;
     }
 
-    const submittedTitle = logTitle;
-    const submittedProjectId = logProjectId;
+    const submittedTitle = logTitle.trim();
+    const submittedProjectId = workItemType === 'PROJECT' ? logProjectId : '';
+    const submittedSecondaryWorkItemId = workItemType === 'SECONDARY' ? secondaryWorkItemId : '';
+    const submittedSecondaryWorkItemName = workItemType === 'SECONDARY' ? (secondaryWorkItemName || submittedTitle).trim() : '';
+    if (workItemType === 'SECONDARY' && !submittedSecondaryWorkItemId && !submittedSecondaryWorkItemName) {
+      triggerAlert('error', 'Elegí o escribí una carga secundaria.');
+      return;
+    }
+
     const submittedDate = overrideDate ? logDate : getArgentinaTodayDateOnly();
     setIsSavingWorkLog(true);
     try {
       const payload = {
         employeeId: employee.id,
         projectId: submittedProjectId || undefined,
+        secondaryWorkItemId: submittedSecondaryWorkItemId || undefined,
+        secondaryWorkItemName: submittedSecondaryWorkItemName || undefined,
         title: submittedTitle,
         description: logDescription,
         date: submittedDate,
@@ -401,9 +415,12 @@ export default function EmployeeDashboard({
       resetWorkLogForm();
       setSelectedCalendarDate(submittedDate);
 
-      const match = projects.find(p => p.id === submittedProjectId || (p.name || '').toLowerCase().trim() === (submittedTitle || '').toLowerCase().trim());
+      const match = projects.find(p => p.id === submittedProjectId || (p.name || '').toLowerCase().trim() === submittedTitle.toLowerCase());
       if (match) {
         triggerAlert('success', wasEditing ? 'Parte diario actualizado correctamente.' : `Trabajo diario guardado y vinculado al proyecto "${match.name}".`);
+      } else if (workItemType === 'SECONDARY') {
+        const itemName = submittedSecondaryWorkItemName || secondaryWorkItems.find((item) => item.id === submittedSecondaryWorkItemId)?.name || submittedTitle;
+        triggerAlert('success', wasEditing ? 'Parte diario actualizado correctamente.' : `Trabajo diario guardado como carga secundaria "${itemName}".`);
       } else {
         triggerAlert('success', wasEditing ? 'Parte diario actualizado correctamente.' : 'Trabajo diario registrado con éxito.');
       }
@@ -655,6 +672,17 @@ export default function EmployeeDashboard({
               {hasLogToday && !editingWorkLogId && <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800">Ya cargaste al menos una actividad hoy. Podés registrar otra si hiciste más tareas.</div>}
               
               <form onSubmit={handleLogSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <button type="button" onClick={() => { setWorkItemType('PROJECT'); setSecondaryWorkItemId(''); setSecondaryWorkItemName(''); }} className={`rounded-xl border px-4 py-3 text-left text-xs font-bold transition-all ${workItemType === 'PROJECT' ? 'border-indigo-500 bg-indigo-50 text-indigo-800' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}>
+                    Proyecto formal
+                    <span className="mt-1 block text-[10px] font-medium text-slate-500">Vincula el parte a un proyecto vigente creado por ADMIN.</span>
+                  </button>
+                  <button type="button" onClick={() => { setWorkItemType('SECONDARY'); setLogProjectId(''); }} className={`rounded-xl border px-4 py-3 text-left text-xs font-bold transition-all ${workItemType === 'SECONDARY' ? 'border-amber-500 bg-amber-50 text-amber-800' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}>
+                    Carga secundaria / soporte
+                    <span className="mt-1 block text-[10px] font-medium text-slate-500">Agrupa tareas cortas como soporte, arreglos o instalaciones.</span>
+                  </button>
+                </div>
+
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
                     Título o Proyecto
@@ -709,7 +737,8 @@ export default function EmployeeDashboard({
                       const selected = projects.find((project) => project.id === e.target.value);
                       if (selected && !logTitle.trim()) setLogTitle(selected.name);
                     }}
-                    className="w-full text-sm bg-white border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-800 transition-all"
+                    disabled={workItemType === 'SECONDARY'}
+                    className="w-full text-sm bg-white border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-800 transition-all disabled:bg-slate-100 disabled:text-slate-400"
                   >
                     <option value="">Sin proyecto asociado</option>
                     {myAssignedProjects.map((project) => (
@@ -717,6 +746,17 @@ export default function EmployeeDashboard({
                     ))}
                   </select>
                 </div>
+
+                {workItemType === 'SECONDARY' && <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider">Carga secundaria existente
+                    <select value={secondaryWorkItemId} onChange={(e) => { setSecondaryWorkItemId(e.target.value); const selected = secondaryWorkItems.find((item) => item.id === e.target.value); if (selected) { setSecondaryWorkItemName(''); if (!logTitle.trim()) setLogTitle(selected.name); } }} className="mt-2 w-full text-sm bg-white border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-800 transition-all">
+                      <option value="">Crear nueva desde el título</option>{secondaryWorkItems.filter((item) => item.status !== 'ARCHIVED').map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                    </select>
+                  </label>
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider">Nueva carga secundaria
+                    <input value={secondaryWorkItemName} onChange={(e) => { setSecondaryWorkItemName(e.target.value); setSecondaryWorkItemId(''); }} placeholder="Ej. Arreglos PC" className="mt-2 w-full text-sm border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-800 transition-all" />
+                  </label>
+                </div>}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
@@ -896,6 +936,7 @@ export default function EmployeeDashboard({
                   {dailyPagination.rows.map((log) => {
                     const linkedProject = projects.find(p => p.id === log.projectId || (p.name || '').toLowerCase().trim() === (log.title || '').toLowerCase().trim());
                     const isSyncedProject = !!linkedProject;
+                    const linkedSecondary = secondaryWorkItems.find((item) => item.id === log.secondaryWorkItemId);
                     return (
                       <div 
                         key={log.id} 
@@ -918,9 +959,10 @@ export default function EmployeeDashboard({
                           </div>
                           
                           {isSyncedProject && (
-                            <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 rounded px-2 py-0.5 flex items-center gap-1">
-                              <CheckCircle className="w-3 h-3 text-emerald-600" /> Vinculado a Proyecto
-                            </span>
+                            <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 rounded px-2 py-0.5 flex items-center gap-1"><CheckCircle className="w-3 h-3 text-emerald-600" /> Proyecto formal</span>
+                          )}
+                          {linkedSecondary && (
+                            <span className="text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-100 rounded px-2 py-0.5 flex items-center gap-1"><Briefcase className="w-3 h-3 text-amber-600" /> Carga secundaria</span>
                           )}
                         </div>
 
@@ -932,6 +974,7 @@ export default function EmployeeDashboard({
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-bold">
                           {linkedProject && <span className="bg-emerald-50 border border-emerald-100 text-emerald-700 rounded px-2 py-1">{linkedProject.name}</span>}
+                          {linkedSecondary && <span className="bg-amber-50 border border-amber-100 text-amber-700 rounded px-2 py-1">{linkedSecondary.name}</span>}
                           {log.activityType && <span className="bg-indigo-50 border border-indigo-100 text-indigo-700 rounded px-2 py-1">{activityTypeLabel(log.activityType)}</span>}
                           {log.hours !== undefined && <span className="bg-slate-50 border border-slate-200 text-slate-700 rounded px-2 py-1">{log.hours} h</span>}
                           {formatAttendanceTime(attendanceByDate[dayKey(log.date)]) && <span className="bg-blue-50 border border-blue-100 text-blue-700 rounded px-2 py-1">{formatAttendanceTime(attendanceByDate[dayKey(log.date)])}</span>}
@@ -1016,6 +1059,7 @@ export default function EmployeeDashboard({
                       <div className="space-y-3 max-h-[480px] overflow-y-auto pr-1">
                         {selectedDayLogs.map((log) => {
                           const linkedProject = projects.find(p => p.id === log.projectId || (p.name || '').toLowerCase().trim() === (log.title || '').toLowerCase().trim());
+                          const linkedSecondary = secondaryWorkItems.find((item) => item.id === log.secondaryWorkItemId);
                           return (
                             <div key={log.id} className="border border-slate-150 rounded-xl p-3 text-xs">
                               <div className="flex flex-wrap gap-1 mb-2">
@@ -1024,7 +1068,8 @@ export default function EmployeeDashboard({
                                 {log.hours !== undefined && <span className="font-bold border border-slate-200 bg-slate-50 text-slate-700 rounded px-2 py-1">{log.hours} h</span>}
                               </div>
                               <h5 className="font-black text-slate-900">{log.title}</h5>
-                              {linkedProject && <p className="mt-1 font-bold text-emerald-700">{linkedProject.name}</p>}
+                              {linkedProject && <p className="mt-1 font-bold text-emerald-700">Proyecto: {linkedProject.name}</p>}
+                              {linkedSecondary && <p className="mt-1 font-bold text-amber-700">Carga secundaria: {linkedSecondary.name}</p>}
                               <p className="mt-2 text-slate-600 whitespace-pre-line leading-relaxed">{log.description}</p>
                             </div>
                           );

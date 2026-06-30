@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { statisticsApi } from '../api/statistics.api';
 import { CreateEmployeePayload, DailyAttendance, Dependency, Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, LicenseArticle, ActivityType, StatisticsResponse } from '../types';
 import { activityTypeLabel, deploymentEnvironmentLabel, deploymentStatusLabel, difficultyLabel, licenseStatusLabel, projectStatusLabel, statColumnLabel } from '../utils/labels';
+import { getArgentinaTodayDateOnly } from '../utils/date';
 import { 
   Users, Calendar, Briefcase, Plus, Check, X, FileText, 
   User, ShieldAlert, Award, AlertCircle, FilePlus, ChevronRight, Settings, ArrowRight, Trash2, Key, ArrowUpDown,
@@ -136,7 +137,7 @@ export default function AdminDashboard({
     return () => window.removeEventListener('sytec:navigate', onNavigate);
   }, []);
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getArgentinaTodayDateOnly();
   const nonAdminEmployees = employees.filter(e => !e.isAdmin);
   const agentsWithoutLog = nonAdminEmployees.filter(emp => {
     return !workLogs.some(log => log.employeeId === emp.id && log.date === todayStr);
@@ -567,7 +568,7 @@ export default function AdminDashboard({
     (projectDeadlineFilter === 'todos' || proj.deadlineStatus === projectDeadlineFilter) &&
     (projectRedesignFilter === 'todos' || String(!!proj.needsRedesign || proj.status === 'necesita_rediseno') === projectRedesignFilter) &&
     (projectReworkFilter === 'todos' || String(!!proj.needsRework || proj.status === 'necesita_rehacer') === projectReworkFilter)
-  ));
+  )).sort((a, b) => String(b.lastActivityAt || b.updatedAt || '').localeCompare(String(a.lastActivityAt || a.updatedAt || '')));
   const adminFilteredLicenses = licenseRequests.filter((req) => {
     const sender = employees.find((employee) => employee.id === req.employeeId);
     const query = licenseSearchQuery.toLowerCase();

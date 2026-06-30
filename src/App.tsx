@@ -184,7 +184,8 @@ export default function App() {
       email: updatedEmp.email,
       ...(updatedEmp.password?.trim() ? { password: updatedEmp.password.trim() } : {}),
     });
-    const saved = updatedEmp.id === currentUser?.employeeId
+    const shouldUseAdminUpdate = currentUser?.role === 'ADMIN';
+    const saved = updatedEmp.id === currentUser?.employeeId && !shouldUseAdminUpdate
       ? await employeesApi.updateMe(selfProfilePayload)
       : await employeesApi.update(updatedEmp.id, cleanEmployeeUpdatePayload(updatedEmp));
     setEmployees((prev) => prev.map((emp) => (emp.id === saved.id ? saved : emp)));

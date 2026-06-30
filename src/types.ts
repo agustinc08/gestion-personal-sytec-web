@@ -158,6 +158,7 @@ export interface Project {
   lastDeployDate?: string;
   deadlineStatus?: 'en_termino' | 'proximo' | 'esta_semana' | 'vence_hoy' | 'vencido' | 'sin_fecha';
   updatedAt?: string;
+  lastActivityAt?: string;
   updates?: ProjectUpdate[];
   deployments?: Deployment[];
 }

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { statisticsApi } from '../api/statistics.api';
 import { DailyAttendance, Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, ActivityType, StatisticsResponse } from '../types';
 import { activityTypeLabel, deploymentEnvironmentLabel, deploymentStatusLabel, difficultyLabel, licenseStatusLabel, projectStatusLabel } from '../utils/labels';
+import { getArgentinaTodayDateOnly } from '../utils/date';
 import {
   Calendar, CheckCircle, FileText, User, Briefcase, Plus, Clock, 
   MapPin, ShieldAlert, Upload, Download, CheckCircle2, ChevronRight, AlertCircle, FileSpreadsheet,
@@ -127,19 +128,19 @@ export default function EmployeeDashboard({
   const [logProjectId, setLogProjectId] = useState('');
   const [logActivityType, setLogActivityType] = useState<ActivityType>('PROJECT');
   const [logHours, setLogHours] = useState('');
-  const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().split('T')[0]);
+  const [attendanceDate, setAttendanceDate] = useState(getArgentinaTodayDateOnly());
   const [attendanceEntryTime, setAttendanceEntryTime] = useState('');
   const [attendanceExitTime, setAttendanceExitTime] = useState('');
   const [isSavingAttendance, setIsSavingAttendance] = useState(false);
   const [overrideDate, setOverrideDate] = useState(false);
-  const [logDate, setLogDate] = useState(new Date().toISOString().split('T')[0]);
+  const [logDate, setLogDate] = useState(getArgentinaTodayDateOnly());
   const [dailyView, setDailyView] = useState<'list' | 'calendar'>('list');
   const [dailyYear, setDailyYear] = useState(String(new Date().getFullYear()));
   const [dailyMonth, setDailyMonth] = useState(String(new Date().getMonth() + 1));
   const [dailyModeFilter, setDailyModeFilter] = useState('todos');
   const [dailyActivityFilter, setDailyActivityFilter] = useState('todos');
   const [dailyProjectFilter, setDailyProjectFilter] = useState('todos');
-  const [selectedCalendarDate, setSelectedCalendarDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState(getArgentinaTodayDateOnly());
   const [isSavingWorkLog, setIsSavingWorkLog] = useState(false);
   const [editingWorkLogId, setEditingWorkLogId] = useState<string | null>(null);
   const [isRefreshingDashboard, setIsRefreshingDashboard] = useState(false);
@@ -265,8 +266,8 @@ export default function EmployeeDashboard({
     }
   };
   const dailyFilteredLogs = myWorkLogs.filter((log) => (
-    String(new Date(`${log.date}T00:00:00`).getFullYear()) === dailyYear &&
-    String(new Date(`${log.date}T00:00:00`).getMonth() + 1) === dailyMonth &&
+    (log.date || '').slice(0, 4) === dailyYear &&
+    String(Number((log.date || '').slice(5, 7))) === dailyMonth &&
     (dailyModeFilter === 'todos' || log.mode === dailyModeFilter) &&
     (dailyActivityFilter === 'todos' || log.activityType === dailyActivityFilter) &&
     (dailyProjectFilter === 'todos' || log.projectId === dailyProjectFilter)
@@ -284,7 +285,7 @@ export default function EmployeeDashboard({
     ...Array.from({ length: leadingEmptyDays }, () => null),
     ...Array.from({ length: monthDays }, (_, idx) => new Date(calendarYear, calendarMonthIndex, idx + 1)),
   ];
-  const todayIso = new Date().toISOString().split('T')[0];
+  const todayIso = getArgentinaTodayDateOnly();
   const monthTitle = monthStart.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
   const setCalendarMonth = (year: number, monthIndex: number) => {
     const next = new Date(year, monthIndex, 1);
@@ -298,7 +299,7 @@ export default function EmployeeDashboard({
     workLogFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
   const resetWorkLogForm = () => {
-    setEditingWorkLogId(null); setLogTitle(''); setLogDescription(''); setLogMode('presencial'); setLogProjectId(''); setLogActivityType('PROJECT'); setLogHours(''); setOverrideDate(false); setLogDate(new Date().toISOString().split('T')[0]);
+    setEditingWorkLogId(null); setLogTitle(''); setLogDescription(''); setLogMode('presencial'); setLogProjectId(''); setLogActivityType('PROJECT'); setLogHours(''); setOverrideDate(false); setLogDate(getArgentinaTodayDateOnly());
   };
   const editWorkLog = (log: WorkLog) => {
     setEditingWorkLogId(log.id); setLogTitle(log.title); setLogDescription(log.description); setLogMode(log.mode); setLogProjectId(log.projectId || ''); setLogActivityType(log.activityType || 'PROJECT'); setLogHours(log.hours === undefined ? '' : String(log.hours)); setLogDate(log.date); setOverrideDate(true); workLogFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -380,7 +381,7 @@ export default function EmployeeDashboard({
 
     const submittedTitle = logTitle;
     const submittedProjectId = logProjectId;
-    const submittedDate = overrideDate ? logDate : new Date().toISOString().split('T')[0];
+    const submittedDate = overrideDate ? logDate : getArgentinaTodayDateOnly();
     setIsSavingWorkLog(true);
     try {
       const payload = {
@@ -447,7 +448,7 @@ export default function EmployeeDashboard({
   };
   const remainingDaysToTake = safeDayNumber(safeDayNumber(employee.totalLicenseDays) - safeDayNumber(employee.licenseDaysTaken));
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getArgentinaTodayDateOnly();
   const hasLogToday = workLogs.some(log => log.employeeId === employee.id && log.date === todayStr);
   const wasReminded = remindedEmpIds.includes(employee.id);
 
@@ -631,7 +632,7 @@ export default function EmployeeDashboard({
                 <p className="mb-4 text-xs text-slate-500">Opcional y separado de las actividades. Se guarda una vez por día.</p>
                 <form onSubmit={handleAttendanceSubmit} className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(10rem,1fr)_minmax(8rem,0.8fr)_minmax(8rem,0.8fr)_auto] md:items-end">
                 <label className="block text-[10px] font-bold uppercase text-slate-500">Fecha
-                  <input type="date" value={attendanceDate} onChange={(event) => setAttendanceDate(event.target.value)} max={new Date().toISOString().split('T')[0]} className="mt-1 w-full rounded-xl border px-3 py-2 text-xs" />
+                  <input type="date" value={attendanceDate} onChange={(event) => setAttendanceDate(event.target.value)} max={getArgentinaTodayDateOnly()} className="mt-1 w-full rounded-xl border px-3 py-2 text-xs" />
                 </label>
                 <div className="grid grid-cols-2 gap-3 md:contents">
                   <label className="text-[10px] font-bold uppercase text-slate-500">Entrada
@@ -781,7 +782,7 @@ export default function EmployeeDashboard({
                       type="button"
                       onClick={() => {
                         setOverrideDate(!overrideDate);
-                        if (overrideDate) setLogDate(new Date().toISOString().split('T')[0]);
+                        if (overrideDate) setLogDate(getArgentinaTodayDateOnly());
                       }}
                       className="text-[10px] font-bold text-indigo-600 uppercase hover:underline"
                     >
@@ -793,7 +794,7 @@ export default function EmployeeDashboard({
                       type="date"
                       value={logDate}
                       onChange={(e) => setLogDate(e.target.value)}
-                      max={new Date().toISOString().split('T')[0]}
+                      max={getArgentinaTodayDateOnly()}
                       className="w-full text-xs rounded-lg border border-gray-300 p-2 font-mono"
                     />
                   ) : (

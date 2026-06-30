@@ -3567,10 +3567,10 @@ export default function AdminDashboard({
         )}
 
         {adminTab === 'settings' && (
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
+          <div className="space-y-8">
             
             {/* Left Area: Complete user list & credentials management */}
-            <div className="xl:col-span-7 bg-white p-6 rounded-2xl border border-gray-150 shadow-sm space-y-6">
+            <div className="bg-white p-6 rounded-2xl border border-gray-150 shadow-sm space-y-6">
               <div>
                 <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">
                   <span className="p-1.5 bg-slate-150 rounded-xl text-indigo-700">
@@ -3584,15 +3584,15 @@ export default function AdminDashboard({
               </div>
 
               {/* Responsive Table of Users with Inline Editing */}
-              <div className="overflow-x-auto rounded-xl border border-slate-150">
-                <table className="w-full text-left border-collapse text-xs">
+              <div className="overflow-x-auto lg:overflow-visible rounded-xl border border-slate-150">
+                <table className="w-full min-w-[760px] lg:min-w-0 table-fixed text-left border-collapse text-xs">
                   <thead>
                     <tr className="border-b border-slate-100 text-[10px] text-slate-500 uppercase font-bold bg-slate-50">
-                      <th className="py-3.5 px-4 font-black">Agente / Cargo</th>
-                      <th className="py-3.5 px-4 font-black">CUIL / Usuario</th>
-                      <th className="py-3.5 px-4 font-black">Clave de Acceso</th>
-                      <th className="py-3.5 px-4 font-black">Nivel de Permisos</th>
-                      <th className="py-3.5 px-4 font-black text-right">Acciones</th>
+                      <th className="py-3.5 px-4 font-black w-[32%]">Agente / Cargo</th>
+                      <th className="py-3.5 px-4 font-black w-[18%]">CUIL / Usuario</th>
+                      <th className="py-3.5 px-4 font-black w-[20%]">Clave de Acceso</th>
+                      <th className="py-3.5 px-4 font-black w-[18%]">Nivel de Permisos</th>
+                      <th className="py-3.5 px-4 font-black text-right w-[12%]">Acciones</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -3627,7 +3627,7 @@ export default function AdminDashboard({
                                   cuil: formatCuilString(e.target.value)
                                 });
                               }}
-                              className="w-32 px-2.5 py-1.5 border border-slate-250 rounded-lg font-mono text-[11px] bg-slate-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-800 font-bold"
+                              className="w-full max-w-36 px-2.5 py-1.5 border border-slate-250 rounded-lg font-mono text-[11px] bg-slate-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-800 font-bold"
                               placeholder="XX-XXXXXXXX-X"
                             />
                           </td>
@@ -3652,7 +3652,7 @@ export default function AdminDashboard({
                                     triggerAlert('success', `Contraseña de ${emp.name} restablecida con éxito.`);
                                   }
                                 }}
-                                className="px-2 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-705 inline-flex items-center gap-1.5 font-bold rounded-lg text-[10px] cursor-pointer transition-colors"
+                                className="px-2 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-705 inline-flex items-center gap-1.5 font-bold rounded-lg text-[10px] cursor-pointer transition-colors whitespace-nowrap"
                               >
                                 <Key className="w-3.5 h-3.5 text-indigo-600" />
                                 Resetear
@@ -3672,7 +3672,7 @@ export default function AdminDashboard({
                                 });
                                 triggerAlert('success', `Jerarquía modificada: ${emp.name} ahora es ${newAdminStatus ? 'Directivo/Admin' : 'Agente Regular'}.`);
                               }}
-                              className={`px-2.5 py-1 rounded-full text-[9px] uppercase font-extrabold border transition-all cursor-pointer inline-flex items-center gap-1 ${
+                              className={`px-2.5 py-1 rounded-full text-[9px] uppercase font-extrabold border transition-all cursor-pointer inline-flex items-center gap-1 whitespace-nowrap ${
                                 emp.isAdmin 
                                   ? 'bg-rose-50 border-rose-200 text-rose-700 font-black' 
                                   : 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200'
@@ -3719,7 +3719,7 @@ export default function AdminDashboard({
             </div>
 
             {/* Right Area: NEW EMPLOYEE REGISTRY FORM */}
-            <div className="xl:col-span-5 bg-white p-6 rounded-2xl border border-gray-150 shadow-sm self-start space-y-6">
+            <div className="bg-white p-6 rounded-2xl border border-gray-150 shadow-sm space-y-6">
               <div>
                 <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">
                   <span className="p-1.5 bg-indigo-50 rounded-xl text-indigo-700">
@@ -3732,7 +3732,7 @@ export default function AdminDashboard({
                 </p>
               </div>
 
-              <form onSubmit={handleCreateEmployee} className="space-y-4">
+              <form onSubmit={handleCreateEmployee} className="space-y-4 max-w-3xl">
                 <div className="space-y-3.5">
                   <div>
                     <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1.5">Nombre Completo</label>

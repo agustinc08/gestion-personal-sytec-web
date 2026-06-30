@@ -625,15 +625,15 @@ export default function EmployeeDashboard({
         {/* TAB 1: CARGA DIARIA & HISTORIAL */}
         {activeTab === 'carga_diaria' && (
           <div className="space-y-8">
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-              <div className="lg:col-span-4 bg-white p-6 rounded-2xl border border-gray-150 shadow-sm self-start h-full">
+            <div className="space-y-8">
+              <div className="bg-white p-6 rounded-2xl border border-gray-150 shadow-sm">
                 <h3 className="text-lg font-bold text-gray-900 mb-2 flex items-center gap-2"><Clock className="w-5 h-5 text-indigo-600" /> Horario de jornada</h3>
                 <p className="mb-4 text-xs text-slate-500">Opcional y separado de las actividades. Se guarda una vez por día.</p>
-                <form onSubmit={handleAttendanceSubmit} className="space-y-3">
+                <form onSubmit={handleAttendanceSubmit} className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(10rem,1fr)_minmax(8rem,0.8fr)_minmax(8rem,0.8fr)_auto] md:items-end">
                 <label className="block text-[10px] font-bold uppercase text-slate-500">Fecha
                   <input type="date" value={attendanceDate} onChange={(event) => setAttendanceDate(event.target.value)} max={new Date().toISOString().split('T')[0]} className="mt-1 w-full rounded-xl border px-3 py-2 text-xs" />
                 </label>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-3 md:contents">
                   <label className="text-[10px] font-bold uppercase text-slate-500">Entrada
                     <input type="time" value={attendanceEntryTime} onChange={(event) => setAttendanceEntryTime(event.target.value)} className="mt-1 w-full rounded-xl border px-3 py-2 text-xs" />
                   </label>
@@ -641,12 +641,12 @@ export default function EmployeeDashboard({
                     <input type="time" value={attendanceExitTime} onChange={(event) => setAttendanceExitTime(event.target.value)} className="mt-1 w-full rounded-xl border px-3 py-2 text-xs" />
                   </label>
                 </div>
-                <button type="submit" disabled={isSavingAttendance} className="w-full rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-bold text-white disabled:opacity-60">{isSavingAttendance ? 'Guardando horario...' : 'Guardar horario'}</button>
+                <button type="submit" disabled={isSavingAttendance} className="w-full whitespace-nowrap rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-bold text-white disabled:opacity-60 md:w-auto">{isSavingAttendance ? 'Guardando horario...' : 'Guardar horario'}</button>
               </form>
             </div>
 
             {/* Form Input */}
-              <div ref={workLogFormRef} className="lg:col-span-8 bg-white p-6 rounded-2xl border border-gray-150 shadow-sm self-start">
+              <div ref={workLogFormRef} className="bg-white p-6 rounded-2xl border border-gray-150 shadow-sm">
               <h3 className="text-lg font-bold text-gray-900 mb-2 flex items-center gap-2">
                 <Plus className="w-5 h-5 text-indigo-600" /> {editingWorkLogId ? 'Editar parte diario' : 'Cargar actividad / trabajo diario'}
               </h3>

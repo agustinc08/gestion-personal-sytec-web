@@ -1,33 +1,44 @@
-﻿import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { statisticsApi } from '../api/statistics.api';
-import { Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, LicenseArticle, ActivityType, StatisticsResponse } from '../types';
+import { secondaryWorkItemsApi } from '../api/secondaryWorkItems.api';
+import { CreateEmployeePayload, DailyAttendance, Dependency, Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, LicenseArticle, ActivityType, StatisticsResponse, SecondaryWorkItem } from '../types';
 import { activityTypeLabel, deploymentEnvironmentLabel, deploymentStatusLabel, difficultyLabel, licenseStatusLabel, projectStatusLabel, statColumnLabel } from '../utils/labels';
+import { getArgentinaTodayDateOnly } from '../utils/date';
 import { 
   Users, Calendar, Briefcase, Plus, Check, X, FileText, 
   User, ShieldAlert, Award, AlertCircle, FilePlus, ChevronRight, Settings, ArrowRight, Trash2, Key, ArrowUpDown,
-  ArrowLeft, History, MessageSquare, Send, BarChart3, Upload
+  ArrowLeft, History, MessageSquare, Send, BarChart3, Upload, RefreshCw
 } from 'lucide-react';
 import ProjectComments from './ProjectComments';
 import { Pagination, usePagination } from './Pagination';
+import DependencyAdmin from './DependencyAdmin';
+import AdminV2Panel from './AdminV2Panel';
+import AnnouncementAdmin from './AnnouncementAdmin';
 
 interface AdminDashboardProps {
   employees: Employee[];
   workLogs: WorkLog[];
+  dailyAttendances: DailyAttendance[];
   projects: Project[];
+  secondaryWorkItems: SecondaryWorkItem[];
   licenseRequests: LicenseRequest[];
   licenseRules: LicenseRule[];
   licenseArticles: LicenseArticle[];
-  dependencies: string[];
+  dependencies: Dependency[];
+  onCreateDependency: (payload: Partial<Dependency> & { name: string }) => Promise<void>;
+  onUpdateDependency: (id: string, payload: Partial<Dependency>) => Promise<void>;
+  onRemoveDependency: (id: string) => Promise<void>;
   strikeConfig: StrikeConfig;
   currentAdmin: Employee;
   onUpdateStrikeConfig: (config: StrikeConfig) => void;
   onApproveRejectRequest: (id: string, status: 'aprobado' | 'rechazado') => any;
   onAddProject: (proj: Omit<Project, 'id' | 'status'>) => any;
   onUpdateProject?: (proj: Project) => Promise<Project> | void;
+  onDeleteProject: (id: string) => Promise<void>;
   onAddProjectUpdate?: (projectId: string, update: string | (Partial<ProjectUpdate> & { content: string })) => Promise<Project> | void;
   onAddDeployment?: (projectId: string, payload: any) => Promise<any> | void;
   onAddManualLicense: (req: Omit<LicenseRequest, 'id' | 'status' | 'dateRequested'> & { status: 'pendiente' | 'aprobado' }) => any;
-  onAddEmployee: (emp: any) => any;
+  onAddEmployee: (emp: CreateEmployeePayload) => any;
   onUpdateEmployee: (emp: Employee) => Promise<Employee> | void;
   onUpdateAvatar?: (employeeId: string, avatar: string | File) => Promise<Employee> | void;
   onSwapStrikeDutyOrders?: (empIdA: string, empIdB: string) => void;
@@ -36,6 +47,7 @@ interface AdminDashboardProps {
   onDeleteLicenseRequest: (id: string) => Promise<void> | void;
   onClearLicenses?: () => Promise<void> | void;
   onResetGuardias?: (id: string) => Promise<Employee> | void;
+  onAdjustCompensatoryDays?: (id: string, days: number) => Promise<Employee> | void;
   onCreateLicenseArticle?: (payload: Partial<LicenseArticle>) => Promise<LicenseArticle> | void;
   onUpdateLicenseArticle?: (id: string, payload: Partial<LicenseArticle>) => Promise<LicenseArticle> | void;
   onUploadLicenseTemplate?: (id: string, file: File) => Promise<LicenseArticle> | void;
@@ -44,22 +56,29 @@ interface AdminDashboardProps {
   onGenerateArticlePdf?: (articleId: string, values: Record<string, string>) => Promise<string> | void;
   remindedEmpIds: string[];
   setRemindedEmpIds: React.Dispatch<React.SetStateAction<string[]>>;
+  onRefresh?: () => void;
 }
 
 export default function AdminDashboard({
   employees,
   workLogs,
+  dailyAttendances,
   projects,
+  secondaryWorkItems,
   licenseRequests,
   licenseRules,
   licenseArticles,
   dependencies,
+  onCreateDependency,
+  onUpdateDependency,
+  onRemoveDependency,
   strikeConfig,
   currentAdmin,
   onUpdateStrikeConfig,
   onApproveRejectRequest,
   onAddProject,
   onUpdateProject,
+  onDeleteProject,
   onAddProjectUpdate,
   onAddDeployment,
   onAddManualLicense,
@@ -72,6 +91,7 @@ export default function AdminDashboard({
   onDeleteLicenseRequest,
   onClearLicenses,
   onResetGuardias,
+  onAdjustCompensatoryDays,
   onCreateLicenseArticle,
   onUpdateLicenseArticle,
   onUploadLicenseTemplate,
@@ -80,10 +100,47 @@ export default function AdminDashboard({
   onGenerateArticlePdf,
   remindedEmpIds,
   setRemindedEmpIds,
+  onRefresh,
 }: AdminDashboardProps) {
-  const [adminTab, setAdminTab] = useState<'employees' | 'attendance' | 'projects' | 'statistics' | 'strikes' | 'settings' | 'profile'>('employees');
+  const initialAdminTab = () => {
+    const section = new URLSearchParams(window.location.search).get('seccion');
+    const map: Record<string, 'v2' | 'announcements' | 'employees' | 'attendance' | 'projects' | 'statistics' | 'strikes' | 'settings' | 'dependencies' | 'profile'> = {
+      empleados: 'employees',
+      asistencia: 'attendance',
+      comunicados: 'announcements',
+      guardias: 'strikes',
+      proyectos: 'projects',
+      licencias: 'attendance',
+      dependencias: 'dependencies',
+      'parte-diario': 'attendance',
+      estadisticas: 'statistics',
+      perfil: 'profile',
+    };
+    return section && map[section] ? map[section] : 'v2';
+  };
+  const [adminTab, setAdminTab] = useState<'v2' | 'announcements' | 'employees' | 'attendance' | 'projects' | 'statistics' | 'strikes' | 'settings' | 'dependencies' | 'profile'>(initialAdminTab);
+  useEffect(() => {
+    const onNavigate = (event: Event) => {
+      const section = (event as CustomEvent<{ section?: string }>).detail?.section;
+      const map: Record<string, typeof adminTab> = {
+        empleados: 'employees',
+        asistencia: 'attendance',
+        comunicados: 'announcements',
+        guardias: 'strikes',
+        proyectos: 'projects',
+        licencias: 'attendance',
+        dependencias: 'dependencies',
+        'parte-diario': 'attendance',
+        estadisticas: 'statistics',
+        perfil: 'profile',
+      };
+      if (section && map[section]) setAdminTab(map[section]);
+    };
+    window.addEventListener('sytec:navigate', onNavigate);
+    return () => window.removeEventListener('sytec:navigate', onNavigate);
+  }, []);
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getArgentinaTodayDateOnly();
   const nonAdminEmployees = employees.filter(e => !e.isAdmin);
   const agentsWithoutLog = nonAdminEmployees.filter(emp => {
     return !workLogs.some(log => log.employeeId === emp.id && log.date === todayStr);
@@ -122,12 +179,30 @@ export default function AdminDashboard({
     DOCUMENTATION: 'Documentación',
     OTHER: 'Otro',
   };
+  const splitTechStack = (value?: string) => (value || '').split(/[,;/|]+/).map((item) => item.trim()).filter(Boolean);
+  const compactTechStack = (value?: string) => splitTechStack(value).slice(0, 4);
+  const compensatoryText = (days: number) => days === 0 ? 'Sin días compensatorios acumulados' : days === 1 ? '1 día disponible' : `${days} días disponibles`;
+  const attendanceByEmployeeDate = React.useMemo(() => {
+    const rows: Record<string, DailyAttendance> = {};
+    dailyAttendances.forEach((row) => {
+      rows[`${row.employeeId}:${String(row.date).slice(0, 10)}`] = row;
+    });
+    return rows;
+  }, [dailyAttendances]);
+  const workLogTimeText = (log: WorkLog) => {
+    const attendance = attendanceByEmployeeDate[`${log.employeeId}:${String(log.date).slice(0, 10)}`];
+    return (attendance?.entryTime || attendance?.exitTime) ? `Horario: ${attendance.entryTime || '--:--'} a ${attendance.exitTime || '--:--'}` : '';
+  };
 
   // Selected employee detail state
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(employees[0]?.id || null);
+  const [employeeDependencyFilter, setEmployeeDependencyFilter] = useState('todas');
 
   // Selected project for detail view state
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [selectedSecondaryWorkItemId, setSelectedSecondaryWorkItemId] = useState<string | null>(null);
+  const [projectTimelinePage, setProjectTimelinePage] = useState(1);
+  useEffect(() => setProjectTimelinePage(1), [selectedProjectId]);
   const [isEditingProject, setIsEditingProject] = useState(false);
   const [newUpdateText, setNewUpdateText] = useState('');
   const [newUpdateTitle, setNewUpdateTitle] = useState('');
@@ -140,11 +215,12 @@ export default function AdminDashboard({
   // New project state
   const [projName, setProjName] = useState('');
   const [projDesc, setProjDesc] = useState('');
-  const [projDependency, setProjDependency] = useState(dependencies[0] || '');
+  const [projDependency, setProjDependency] = useState(dependencies[0]?.name || '');
   const [projAssignedIds, setProjAssignedIds] = useState<string[]>([]);
   const [projYear, setProjYear] = useState(new Date().getFullYear());
   const [projDifficulty, setProjDifficulty] = useState<Project['difficulty']>('MEDIUM');
   const [projDeadline, setProjDeadline] = useState('');
+  const [projTechStack, setProjTechStack] = useState('');
   const [projOwnerId, setProjOwnerId] = useState('');
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
@@ -234,9 +310,10 @@ export default function AdminDashboard({
   const [newEmpPosition, setNewEmpPosition] = useState('');
   const [newEmpCuil, setNewEmpCuil] = useState('');
   const [newEmpPassword, setNewEmpPassword] = useState('');
-  const [newEmpDependency, setNewEmpDependency] = useState('Oficina de Sistemas y Tecnología (SyTec)');
+  const [newEmpDependency, setNewEmpDependency] = useState(dependencies[0]?.id || '');
   const [newEmpTotalDays, setNewEmpTotalDays] = useState(0);
   const [newEmpRemote, setNewEmpRemote] = useState<string[]>([]);
+  const [isCreatingEmployee, setIsCreatingEmployee] = useState(false);
 
   // States for Editing Employee Profile
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -249,6 +326,9 @@ export default function AdminDashboard({
   const [editTotalLicenseDays, setEditTotalLicenseDays] = useState(0);
   const [editRemoteDays, setEditRemoteDays] = useState<string[]>([]);
   const [editStrikeDutyOrder, setEditStrikeDutyOrder] = useState<number>(-1);
+  const [isSavingProfileEdit, setIsSavingProfileEdit] = useState(false);
+  const [isRefreshingDashboard, setIsRefreshingDashboard] = useState(false);
+  const [refreshMessage, setRefreshMessage] = useState('');
 
   // States for Editing a License Request
   const [editingLicenseId, setEditingLicenseId] = useState<string | null>(null);
@@ -260,6 +340,8 @@ export default function AdminDashboard({
 
   // States for Admin's Self Profile
   const [adminProfileName, setAdminProfileName] = useState(currentAdmin.name);
+  const [adminProfileFirstName, setAdminProfileFirstName] = useState(currentAdmin.name.trim().split(/\s+/)[0] || '');
+  const [adminProfileLastName, setAdminProfileLastName] = useState(currentAdmin.name.trim().split(/\s+/).slice(1).join(' '));
   const [adminProfileEmail, setAdminProfileEmail] = useState(currentAdmin.email);
   const [adminProfilePassword, setAdminProfilePassword] = useState('');
   const [adminProfileAvatar, setAdminProfileAvatar] = useState(currentAdmin.avatar || '');
@@ -318,40 +400,48 @@ export default function AdminDashboard({
     setEditName(emp.name);
     setEditEmail(emp.email);
     setEditCuil(emp.cuil || '');
-    setEditPassword(emp.password || '');
-    setEditDependency(emp.dependency);
+    setEditPassword('');
+    setEditDependency(emp.dependencyId || '');
     setEditPosition(emp.position || '');
     setEditTotalLicenseDays(emp.totalLicenseDays);
     setEditRemoteDays(emp.remoteDaysAssigned || []);
-    setEditStrikeDutyOrder(emp.strikeDutyOrder || -1);
+    setEditStrikeDutyOrder(emp.strikeDutyOrder ?? -1);
     setIsEditingProfile(true);
   };
 
-  const handleSaveProfileEdit = (e: React.FormEvent) => {
+  const handleSaveProfileEdit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedEmp) return;
+    if (!selectedEmp || isSavingProfileEdit) return;
     if (!editName.trim() || !editEmail.trim() || !editCuil.trim()) {
-      triggerAlert('error', 'Por favor, completá Nombre, Email y CUIL. La clave solo se completa si querés cambiarla.');
+      triggerAlert('error', 'Por favor, completá Nombre, Email y CUIL. La contraseña nueva es opcional.');
       return;
     }
 
-    onUpdateEmployee({
-      ...selectedEmp,
-      name: editName,
-      email: editEmail,
-      cuil: editCuil,
-      ...(editPassword.trim() ? { password: editPassword.trim() } : {}),
-      dependency: editDependency,
-      position: editPosition,
-      totalLicenseDays: editTotalLicenseDays,
-      remoteDaysAssigned: editRemoteDays,
-      strikeDutyOrder: editStrikeDutyOrder,
-    });
-
-    setIsEditingProfile(false);
-    triggerAlert('success', `¡Perfil de ${editName} actualizado con éxito en toda la red!`);
+    setIsSavingProfileEdit(true);
+    try {
+      await Promise.resolve(onUpdateEmployee({
+        ...selectedEmp,
+        name: editName.trim(),
+        email: editEmail.trim(),
+        cuil: editCuil.trim(),
+        ...(editPassword.trim() ? { password: editPassword.trim() } : {}),
+        dependencyId: editDependency,
+        position: editPosition.trim(),
+        totalLicenseDays: editTotalLicenseDays,
+        remoteDaysAssigned: editRemoteDays,
+        strikeDutyOrder: editStrikeDutyOrder,
+      }));
+      setIsEditingProfile(false);
+      setEditPassword('');
+      triggerAlert('success', `Perfil de ${editName.trim()} actualizado correctamente.`);
+      if (onRefresh) await Promise.resolve(onRefresh());
+    } catch (error: any) {
+      const message = error?.response?.data?.message;
+      triggerAlert('error', Array.isArray(message) ? message.join(' ') : message || 'No se pudo actualizar el perfil del agente.');
+    } finally {
+      setIsSavingProfileEdit(false);
+    }
   };
-
   const toggleEditRemoteDay = (day: string) => {
     if (editRemoteDays.includes(day)) {
       setEditRemoteDays(editRemoteDays.filter(d => d !== day));
@@ -449,8 +539,13 @@ export default function AdminDashboard({
   };
 
   // Calculations helper for employee remaining license days
+  const safeDayNumber = (value: unknown) => {
+    const numeric = Number(value) || 0;
+    return Object.is(numeric, -0) ? 0 : numeric;
+  };
+  const formatDays = (value: unknown) => `${safeDayNumber(value)}d`;
   const getRemainingDays = (emp: Employee) => {
-    return (emp.totalLicenseDays + emp.guardiasDone) - emp.licenseDaysTaken;
+    return safeDayNumber(safeDayNumber(emp.totalLicenseDays) - safeDayNumber(emp.licenseDaysTaken));
   };
 
   // Detail panel for a selected employee
@@ -477,14 +572,18 @@ export default function AdminDashboard({
     (projectDeadlineFilter === 'todos' || proj.deadlineStatus === projectDeadlineFilter) &&
     (projectRedesignFilter === 'todos' || String(!!proj.needsRedesign || proj.status === 'necesita_rediseno') === projectRedesignFilter) &&
     (projectReworkFilter === 'todos' || String(!!proj.needsRework || proj.status === 'necesita_rehacer') === projectReworkFilter)
-  ));
+  )).sort((a, b) => String(b.lastActivityAt || b.updatedAt || '').localeCompare(String(a.lastActivityAt || a.updatedAt || '')));
+  const sortedSecondaryWorkItems = [...secondaryWorkItems].sort((a, b) => String(b.lastActivityAt || b.updatedAt || '').localeCompare(String(a.lastActivityAt || a.updatedAt || '')));
+  const selectedSecondaryWorkItem = selectedSecondaryWorkItemId ? secondaryWorkItems.find((item) => item.id === selectedSecondaryWorkItemId) : null;
+  const selectedSecondaryLogs = selectedSecondaryWorkItemId ? workLogs.filter((log) => log.secondaryWorkItemId === selectedSecondaryWorkItemId).sort((a, b) => b.date.localeCompare(a.date)) : [];
   const adminFilteredLicenses = licenseRequests.filter((req) => {
     const sender = employees.find((employee) => employee.id === req.employeeId);
     const query = licenseSearchQuery.toLowerCase();
     const queryMatch = !!sender && (sender.name.toLowerCase().includes(query) || sender.dependency.toLowerCase().includes(query)) || req.article.toLowerCase().includes(query) || req.reason.toLowerCase().includes(query);
     return queryMatch && (licenseStatusFilter === 'todos' || req.status === licenseStatusFilter);
   }).sort((a, b) => b.startDate.localeCompare(a.startDate));
-  const employeePagination = usePagination(employees);
+  const filteredEmployees = employees.filter((employee) => employeeDependencyFilter === 'todas' || employee.dependencyId === employeeDependencyFilter);
+  const employeePagination = usePagination(filteredEmployees, [employeeDependencyFilter]);
   const userPagination = usePagination(employees);
   const workLogPagination = usePagination(adminFilteredWorkLogs, [adminWorkLogYear, adminWorkLogMonth, adminWorkLogEmployeeId, adminWorkLogMode, adminWorkLogActivityType, adminWorkLogProjectId]);
   const projectPagination = usePagination(adminFilteredProjects, [projectYearFilter, projectDifficultyFilter, projectStatusFilter, projectOwnerFilter, projectDeadlineFilter, projectRedesignFilter, projectReworkFilter]);
@@ -493,11 +592,12 @@ export default function AdminDashboard({
   const resetProjectForm = () => {
     setProjName('');
     setProjDesc('');
-    setProjDependency(dependencies[0] || '');
+    setProjDependency(dependencies[0]?.name || '');
     setProjAssignedIds([]);
     setProjYear(new Date().getFullYear());
     setProjDifficulty('MEDIUM');
     setProjDeadline('');
+    setProjTechStack('');
     setProjOwnerId('');
   };
 
@@ -528,6 +628,7 @@ export default function AdminDashboard({
         year: projYear,
         difficulty: projDifficulty,
         deadline: projDeadline,
+        techStack: projTechStack,
       }));
 
       resetProjectForm();
@@ -771,40 +872,57 @@ export default function AdminDashboard({
     triggerAlert('success', '¡Planes del próximo paro y guardia de contingencia sincronizados con éxito!');
   };
 
-  const handleCreateEmployee = (e: React.FormEvent) => {
+  const handleCreateEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newEmpName.trim() || !newEmpEmail.trim() || !newEmpCuil.trim() || !newEmpPassword.trim()) {
+    const name = newEmpName.trim();
+    const email = newEmpEmail.trim();
+    const cuil = newEmpCuil.trim();
+    const password = newEmpPassword.trim();
+    if (!name || !email || !cuil || !password) {
       triggerAlert('error', 'Por favor completa todos los campos requeridos (Nombre, E-mail, CUIL y Clave Provisoria).');
       return;
     }
+    if (!newEmpDependency) {
+      triggerAlert('error', 'Selecciona una dependencia para crear la cuenta.');
+      return;
+    }
 
-    onAddEmployee({
-      name: newEmpName,
-      email: newEmpEmail,
-      dependency: newEmpDependency,
-      position: newEmpPosition || 'Oficial',
-      totalLicenseDays: newEmpTotalDays,
-      licenseDaysTaken: 0,
-      guardiasDone: 0,
-      remoteDaysAssigned: newEmpRemote,
-      cuil: newEmpCuil,
-      password: newEmpPassword,
-      mustChangePassword: true, // First login will require changing it!
-    });
+    setIsCreatingEmployee(true);
+    try {
+      const saved = await Promise.resolve(onAddEmployee({
+        name,
+        email,
+        dependencyId: newEmpDependency,
+        dependency: dependencies.find((dependency) => dependency.id === newEmpDependency)?.name || '',
+        position: newEmpPosition.trim() || 'Oficial',
+        totalLicenseDays: newEmpTotalDays,
+        remoteDaysAssigned: newEmpRemote,
+        cuil,
+        password,
+        mustChangePassword: true,
+      }));
 
-    setNewEmpName('');
-    setNewEmpEmail('');
-    setNewEmpPosition('');
-    setNewEmpCuil('');
-    setNewEmpPassword('');
-    setNewEmpTotalDays(0);
-    setNewEmpRemote([]);
-    triggerAlert('success', `Empleado "${newEmpName}" con CUIL ${newEmpCuil} dado de alta con éxito con contraseña temporaria.`);
+      setEmployeeDependencyFilter('todas');
+      if (saved?.id) setSelectedEmployeeId(saved.id);
+      setNewEmpName('');
+      setNewEmpEmail('');
+      setNewEmpPosition('');
+      setNewEmpCuil('');
+      setNewEmpPassword('');
+      setNewEmpTotalDays(0);
+      setNewEmpRemote([]);
+      triggerAlert('success', `Empleado "${name}" con CUIL ${cuil} dado de alta con exito con contrasena temporaria.`);
+    } catch (error: any) {
+      const message = error?.response?.data?.message;
+      triggerAlert('error', Array.isArray(message) ? message.join(' ') : message || 'No se pudo dar de alta el empleado. Revisa los datos e intenta nuevamente.');
+    } finally {
+      setIsCreatingEmployee(false);
+    }
   };
-
   const handleSaveAdminSelfProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!adminProfileName.trim() || !adminProfileEmail.trim()) {
+    const fullName = `${adminProfileFirstName} ${adminProfileLastName}`.trim();
+    if (!fullName || !adminProfileEmail.trim()) {
       triggerAlert('error', 'Por favor, completa los campos de Nombre y Correo.');
       return;
     }
@@ -812,15 +930,15 @@ export default function AdminDashboard({
     try {
       await Promise.resolve(onUpdateEmployee({
         ...currentAdmin,
-        name: adminProfileName,
+        name: fullName,
         email: adminProfileEmail,
         avatar: adminProfileAvatar,
         ...(adminProfilePassword.trim() ? { password: adminProfilePassword.trim() } : {}),
       }));
       setAdminProfilePassword('');
-      triggerAlert('success', 'Tus datos de perfil administrativo se actualizaron correctamente.');
+      triggerAlert('success', 'Perfil actualizado correctamente');
     } catch {
-      triggerAlert('error', 'No se pudo actualizar tu perfil.');
+      triggerAlert('error', 'No se pudo actualizar el perfil');
     }
   };
 
@@ -988,7 +1106,9 @@ export default function AdminDashboard({
       )}
 
       {/* Admin Tabs */}
-      <div className="flex flex-wrap border-b border-gray-200 mb-8 gap-x-2 gap-y-1">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 mb-8"><div className="flex flex-wrap gap-x-2 gap-y-1">
+        <button onClick={() => setAdminTab('v2')} className={`px-5 py-3 font-semibold text-sm border-b-2 flex items-center gap-2 ${adminTab === 'v2' ? 'border-red-600 text-red-600 font-bold' : 'border-transparent text-gray-500 hover:text-gray-900'}`}><BarChart3 className="h-4 w-4" /> Panel ejecutivo</button>
+        <button onClick={() => setAdminTab('announcements')} className={`px-5 py-3 font-semibold text-sm border-b-2 flex items-center gap-2 ${adminTab === 'announcements' ? 'border-red-600 text-red-600 font-bold' : 'border-transparent text-gray-500 hover:text-gray-900'}`}><MessageSquare className="h-4 w-4" /> Comunicados</button>
         <button
           onClick={() => setAdminTab('employees')}
           className={`px-5 py-3 font-semibold text-sm border-b-2 flex items-center gap-2 whitespace-nowrap transition-all duration-200 ${
@@ -1059,6 +1179,12 @@ export default function AdminDashboard({
           Administración de Usuarios
         </button>
         <button
+          onClick={() => setAdminTab('dependencies')}
+          className={`px-5 py-3 font-semibold text-sm border-b-2 flex items-center gap-2 whitespace-nowrap transition-all duration-200 ${adminTab === 'dependencies' ? 'border-red-600 text-red-600 font-bold' : 'border-transparent text-gray-500 hover:text-gray-900'}`}
+        >
+          <Users className="w-4 h-4 text-indigo-500" /> Dependencias
+        </button>
+        <button
           onClick={() => setAdminTab('profile')}
           className={`px-5 py-3 font-semibold text-sm border-b-2 flex items-center gap-2 whitespace-nowrap transition-all duration-200 ${
             adminTab === 'profile'
@@ -1070,15 +1196,25 @@ export default function AdminDashboard({
           Mi Perfil
         </button>
       </div>
+      {onRefresh && <div className="mb-2 flex flex-wrap items-center gap-2"><button type="button" onClick={async () => { setIsRefreshingDashboard(true); setRefreshMessage(''); try { await Promise.resolve(onRefresh()); setRefreshMessage('Datos actualizados'); } catch { triggerAlert('error', 'No se pudieron actualizar los datos.'); } finally { setIsRefreshingDashboard(false); window.setTimeout(() => setRefreshMessage(''), 2500); } }} disabled={isRefreshingDashboard} className="rounded-xl border bg-white px-3 py-2 text-xs font-bold text-slate-700 inline-flex items-center gap-2 disabled:opacity-60"><RefreshCw className={`h-3.5 w-3.5 text-indigo-600 ${isRefreshingDashboard ? 'animate-spin' : ''}`} />Actualizar</button>{refreshMessage && <span className="rounded-lg bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">{refreshMessage}</span>}</div>}
+      </div>
 
       {/* Main Admin Contents */}
       <div className="grid grid-cols-1 gap-8">
+        {adminTab === 'v2' && <AdminV2Panel />}
+        {adminTab === 'announcements' && <AnnouncementAdmin employees={employees} dependencies={dependencies} />}
         {/* TAB 1: EMPLEADOS - List and Detail split */}
         {adminTab === 'employees' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             {/* Left Col: Employee cards list */}
             <div className="lg:col-span-6 space-y-4">
-              <h3 className="text-lg font-bold text-slate-900">Listado de Plantilla</h3>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-lg font-bold text-slate-900">Listado de Plantilla</h3>
+                <select value={employeeDependencyFilter} onChange={(event) => setEmployeeDependencyFilter(event.target.value)} className="rounded-xl border bg-white px-3 py-2 text-xs">
+                  <option value="todas">Todas las dependencias</option>
+                  {dependencies.map((dependency) => <option key={dependency.id} value={dependency.id}>{dependency.name}</option>)}
+                </select>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[600px] overflow-y-auto pr-1">
                 {employeePagination.rows.map((emp) => {
                   const isSelected = emp.id === selectedEmployeeId;
@@ -1119,8 +1255,8 @@ export default function AdminDashboard({
                           <strong className="text-gray-800 font-mono font-bold text-xs">{remaining} días</strong>
                         </div>
                         <div className="bg-slate-50 p-1.5 rounded-lg">
-                          <span className="block text-[9px] uppercase font-bold text-slate-400">Guardias</span>
-                          <strong className="text-indigo-600 font-mono font-bold text-xs">{emp.guardiasDone} d</strong>
+                          <span className="block text-[9px] uppercase font-bold text-slate-400">Compensatorios</span>
+                          <strong className="text-indigo-600 font-bold text-xs">{emp.guardiasDone ? `${emp.guardiasDone} días` : 'Sin saldo'}</strong>
                         </div>
                       </div>
                     </div>
@@ -1191,9 +1327,9 @@ export default function AdminDashboard({
                             onChange={(e) => setEditDependency(e.target.value)}
                             className="w-full text-xs bg-white border border-slate-300 rounded-xl px-3 py-2.5"
                           >
-                            <option value="Oficina de Sistemas y Tecnología (SyTec)">Oficina de Sistemas y Tecnología (SyTec)</option>
-                            {dependencies.map((dep, idx) => (
-                              <option key={idx} value={dep}>{dep}</option>
+                            <option value="">Sin dependencia asignada</option>
+                            {dependencies.filter((dependency) => dependency.isActive).map((dependency) => (
+                              <option key={dependency.id} value={dependency.id}>{dependency.name}</option>
                             ))}
                           </select>
                         </div>
@@ -1211,14 +1347,13 @@ export default function AdminDashboard({
                           />
                         </div>
                         <div>
-                          <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1.5">Clave de Acceso</label>
+                          <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1.5">Contraseña nueva (opcional)</label>
                           <input
                             type="text"
                             value={editPassword}
                             onChange={(e) => setEditPassword(e.target.value)}
                             className="w-full text-xs font-semibold bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 focus:outline-none"
-                            required
-                          />
+                            placeholder="Completar solo si querés cambiar la contraseña del agente"/>
                         </div>
                       </div>
 
@@ -1277,9 +1412,10 @@ export default function AdminDashboard({
                         </button>
                         <button
                           type="submit"
-                          className="cursor-pointer bg-slate-950 hover:bg-red-650 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition-all shadow-md"
+                          disabled={isSavingProfileEdit}
+                          className="cursor-pointer bg-slate-950 hover:bg-red-650 disabled:bg-slate-400 disabled:cursor-not-allowed text-white font-bold text-xs px-5 py-2.5 rounded-xl transition-all shadow-md"
                         >
-                          Guardar Perfil
+                          {isSavingProfileEdit ? 'Guardando...' : 'Guardar Perfil'}
                         </button>
                       </div>
                     </form>
@@ -1341,30 +1477,34 @@ export default function AdminDashboard({
 
                       {/* General specs */}
                       <div className="grid grid-cols-3 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-100 text-center">
-                        <div>
-                          <span className="text-[9px] uppercase text-gray-400 font-bold block">Acumulados (Guardias +)</span>
-                          <span className="text-md font-bold font-mono text-indigo-600">+{selectedEmp.guardiasDone}d</span>
-                          {onResetGuardias && selectedEmp.guardiasDone > 0 && (
+                                                <div className="rounded-xl bg-white p-3 text-left border border-indigo-100">
+                          <span className="text-[9px] uppercase text-gray-400 font-bold block">Días compensatorios por guardia</span>
+                          <span className="mt-1 block text-[10px] font-bold text-slate-500">Saldo actual</span>
+                          <strong className="block text-lg font-black text-indigo-700">{selectedEmp.guardiasDone} días</strong>
+                          <span className="mt-1 block text-[10px] font-semibold text-slate-500">{compensatoryText(safeDayNumber(selectedEmp.guardiasDone))}</span>
+                          {onAdjustCompensatoryDays && (
                             <button
                               type="button"
                               onClick={() => {
-                                Promise.resolve(onResetGuardias(selectedEmp.id))
-                                  .then(() => triggerAlert('success', 'Guardias reseteadas a 0.'))
-                                  .catch(() => triggerAlert('error', 'No se pudieron resetear las guardias.'));
+                                const value = window.prompt('Saldo compensatorio del agente:', String(safeDayNumber(selectedEmp.guardiasDone)));
+                                if (value === null) return; const days = Number(value);
+                                if (!Number.isInteger(days) || days < 0) { triggerAlert('error', 'Ingresá una cantidad válida de días.'); return; }
+                                if (!window.confirm('¿Seguro que querés ajustar los días compensatorios de este agente? Esta acción quedará registrada en auditoría.')) return;
+                                Promise.resolve(onAdjustCompensatoryDays(selectedEmp.id, days)).then(() => triggerAlert('success', 'Saldo compensatorio actualizado.')).catch(() => triggerAlert('error', 'No se pudo ajustar el saldo.'));
                               }}
-                              className="mt-1 text-[9px] font-bold text-indigo-700 hover:text-indigo-900 underline"
+                              className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-[10px] font-bold text-indigo-700 hover:bg-indigo-100"
                             >
-                              Resetear a 0
+                              Ajustar saldo
                             </button>
                           )}
                         </div>
                         <div>
-                          <span className="text-[9px] uppercase text-gray-400 font-bold block">Tomados (Compensatorios -)</span>
-                          <span className="text-md font-bold font-mono text-amber-600">-{selectedEmp.licenseDaysTaken}d</span>
+                          <span className="text-[9px] uppercase text-gray-400 font-bold block">Días de licencia tomados</span>
+                          <span className="text-md font-bold font-mono text-amber-600">{formatDays(selectedEmp.licenseDaysTaken)}</span>
                         </div>
                         <div>
-                          <span className="text-[9px] uppercase text-gray-400 font-bold block">Saldo Neto</span>
-                          <span className="text-md font-bold font-mono text-emerald-600">{getRemainingDays(selectedEmp)}d</span>
+                          <span className="text-[9px] uppercase text-gray-400 font-bold block">Saldo de licencia</span>
+                          <span className="text-md font-bold font-mono text-emerald-600">{formatDays(getRemainingDays(selectedEmp))}</span>
                         </div>
                       </div>
 
@@ -1600,9 +1740,9 @@ export default function AdminDashboard({
 
         {/* TAB 2: ASISTENCIA & LICENCIAS */}
         {adminTab === 'attendance' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          <div className="space-y-6">
             {/* Left Col: Pending license requests & general list */}
-            <div className="lg:col-span-7 space-y-6">
+            <div className="space-y-6">
               <div className="bg-white p-6 rounded-2xl border border-gray-150 shadow-sm">
                 <h3 className="text-lg font-bold text-slate-900 border-b pb-3 mb-4 flex items-center gap-2">
                   <FileText className="w-5 h-5 text-indigo-600" /> Artículos de licencia y plantillas PDF
@@ -1823,7 +1963,7 @@ export default function AdminDashboard({
                 </div>
 
                 {/* Listado de Solicitudes */}
-                <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+                <div className="space-y-3 max-h-[560px] overflow-y-auto pr-1">
                   {licensePagination.total === 0 ? (
                       <div className="text-center py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-400 text-xs italic font-sans animate-fade-in">
                         No se encontraron registros de licencias que coincidan con los filtros aplicados.
@@ -2073,6 +2213,7 @@ export default function AdminDashboard({
                               {linkedProject && <span className="text-[9px] font-bold bg-emerald-50 border border-emerald-100 text-emerald-700 rounded px-1.5 py-0.5">{linkedProject.name}</span>}
                               {log.activityType && <span className="text-[9px] font-bold bg-indigo-50 border border-indigo-100 text-indigo-700 rounded px-1.5 py-0.5">{activityTypeLabel(log.activityType)}</span>}
                               {log.hours !== undefined && <span className="text-[9px] font-bold bg-slate-50 border border-slate-200 text-slate-700 rounded px-1.5 py-0.5">{log.hours} h</span>}
+                              {workLogTimeText(log) && <span className="text-[9px] font-bold bg-blue-50 border border-blue-100 text-blue-700 rounded px-1.5 py-0.5">{workLogTimeText(log)}</span>}
                             </div>
                           </div>
                         </div>
@@ -2099,7 +2240,7 @@ export default function AdminDashboard({
             </div>
 
             {/* Right Col: Manual licensing addition */}
-            <div className="lg:col-span-5 bg-white p-6 rounded-2xl border border-gray-150 shadow-sm self-start">
+            <div className="bg-white p-6 rounded-2xl border border-gray-150 shadow-sm">
               <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
                 <FilePlus className="w-5 h-5 text-indigo-600" /> Registrar Licencia Manual
               </h3>
@@ -2119,7 +2260,7 @@ export default function AdminDashboard({
                   >
                     {employees.map((emp) => (
                       <option key={emp.id} value={emp.id}>
-                        {emp.name} (Restan: {getRemainingDays(emp)}d)
+                        {emp.name} (Restan: {formatDays(getRemainingDays(emp))})
                       </option>
                     ))}
                   </select>
@@ -2255,6 +2396,7 @@ export default function AdminDashboard({
                   mode: undefined
                 }))
               ].sort((a, b) => b.date.localeCompare(a.date));
+              const timelinePages = Math.max(1, Math.ceil(combinedTimeline.length / 10));
 
               return (
                 <div className="space-y-6 animate-fade-in w-full">
@@ -2290,13 +2432,17 @@ export default function AdminDashboard({
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => setIsEditingProject((current) => !current)}
-                      className="self-start sm:self-auto bg-slate-900 hover:bg-indigo-700 text-white rounded-xl px-4 py-2 text-xs font-bold transition-all"
-                    >
-                      {isEditingProject ? 'Cancelar edición' : 'Editar proyecto'}
-                    </button>
+                    <div className="flex gap-2 self-start sm:self-auto">
+                      <button type="button" onClick={() => setIsEditingProject((current) => !current)} className="bg-slate-900 hover:bg-indigo-700 text-white rounded-xl px-4 py-2 text-xs font-bold transition-all">
+                        {isEditingProject ? 'Cancelar edición' : 'Editar proyecto'}
+                      </button>
+                      <button type="button" onClick={() => {
+                        if (!window.confirm('¿Seguro que querés eliminar este proyecto? Esta acción lo ocultará de los listados.')) return;
+                        Promise.resolve(onDeleteProject(selectedProj.id)).then(() => { setSelectedProjectId(null); triggerAlert('success', 'Proyecto eliminado correctamente'); }).catch(() => triggerAlert('error', 'No se pudo eliminar el proyecto'));
+                      }} className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-bold text-rose-700 hover:bg-rose-100">
+                        Eliminar proyecto
+                      </button>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-2 bg-white p-4 rounded-2xl border border-gray-150 text-xs">
@@ -2335,7 +2481,7 @@ export default function AdminDashboard({
                       </div>
                       <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
                         <span className="block text-[9px] uppercase font-bold text-slate-400">Tecnología / Stack</span>
-                        <strong className="text-slate-700">{selectedProj.techStack || 'Sin cargar'}</strong>
+                        <div className="mt-1 flex flex-wrap gap-1.5">{compactTechStack(selectedProj.techStack).length ? compactTechStack(selectedProj.techStack).map((tech) => <span key={tech} className="rounded-full border border-indigo-100 bg-indigo-50 px-2 py-0.5 text-[9px] font-bold text-indigo-700">{tech}</span>) : <strong className="text-slate-700">Sin cargar</strong>}</div>
                       </div>
                     </div>
                     {selectedProj.notes && (
@@ -2563,9 +2709,6 @@ export default function AdminDashboard({
                       </div>
 
                     </div>
-
-                    <div className="lg:col-span-12"><ProjectComments projectId={selectedProj.id} /></div>
-
                     {/* Right side combined timeline feed */}
                     <div className="lg:col-span-7 bg-white p-6 rounded-2xl border border-gray-150 shadow-sm">
                       <div className="flex items-center justify-between border-b pb-3.5 mb-5">
@@ -2578,6 +2721,8 @@ export default function AdminDashboard({
                         </span>
                       </div>
 
+                      {combinedTimeline.length > 10 && <div className="mb-4 flex items-center justify-end gap-2 text-xs"><button type="button" disabled={projectTimelinePage === 1} onClick={() => setProjectTimelinePage((page) => page - 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Anterior</button><strong>Página {projectTimelinePage} de {timelinePages}</strong><button type="button" disabled={projectTimelinePage === timelinePages} onClick={() => setProjectTimelinePage((page) => page + 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Siguiente</button></div>}
+
                       {combinedTimeline.length === 0 ? (
                         <div className="py-12 text-center text-gray-405">
                           <p className="text-xs italic">Este proyecto aún no registra movimientos ni directivas oficiales.</p>
@@ -2585,7 +2730,7 @@ export default function AdminDashboard({
                         </div>
                       ) : (
                         <div className="relative border-l border-indigo-100 pl-4 ml-2 space-y-6">
-                          {combinedTimeline.map((item) => {
+                          {combinedTimeline.slice((projectTimelinePage - 1) * 10, projectTimelinePage * 10).map((item) => {
                             const isAdminType = item.type === 'admin';
                             return (
                               <div key={item.id} className="relative">
@@ -2653,6 +2798,8 @@ export default function AdminDashboard({
                         </div>
                       )}
                     </div>
+
+                    <div className="lg:col-span-12"><ProjectComments projectId={selectedProj.id} /></div>
 
                   </div>
                 </div>
@@ -2748,8 +2895,8 @@ export default function AdminDashboard({
                         onChange={(e) => setProjDependency(e.target.value)}
                         className="w-full text-xs bg-white border border-gray-300 rounded-xl px-3 py-3"
                       >
-                        {dependencies.map((dep, idx) => (
-                          <option key={idx} value={dep}>{dep}</option>
+                        {dependencies.filter((dependency) => dependency.isActive).map((dependency) => (
+                          <option key={dependency.id} value={dependency.name}>{dependency.name}</option>
                         ))}
                       </select>
                     </div>
@@ -2801,6 +2948,21 @@ export default function AdminDashboard({
                         </select>
                       </div>
                     </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-600 uppercase tracking-wide mb-1.5">Tecnologías usadas</label>
+                      <input
+                        type="text"
+                        value={projTechStack}
+                        onChange={(e) => setProjTechStack(e.target.value)}
+                        placeholder="React, Vite, NestJS, Prisma, PostgreSQL"
+                        className="w-full text-xs bg-white border border-gray-300 rounded-xl px-3 py-3"
+                      />
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {splitTechStack(projTechStack).map((tech) => <span key={tech} className="rounded-full border border-indigo-100 bg-indigo-50 px-2 py-0.5 text-[9px] font-bold text-indigo-700">{tech}</span>)}
+                      </div>
+                    </div>
+
 
                     <div>
                       <label className="block text-[10px] font-bold text-gray-600 uppercase tracking-wide mb-2">
@@ -2951,6 +3113,7 @@ export default function AdminDashboard({
                                 {proj.deadline && <span className="bg-amber-50 border border-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Vence {proj.deadline}</span>}
                                 {proj.ownerName && <span className="bg-emerald-50 border border-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">{proj.ownerName}</span>}
                               </div>
+                              {compactTechStack(proj.techStack).length > 0 && <div className="mt-2 flex flex-wrap gap-1.5">{compactTechStack(proj.techStack).slice(0, 3).map((tech) => <span key={tech} className="rounded-full border border-indigo-100 bg-indigo-50 px-2 py-0.5 text-[9px] font-bold text-indigo-700">{tech}</span>)}</div>}
                               <p className="text-xs text-gray-500 mt-1 lines-2 leading-relaxed h-11 overflow-hidden">{proj.description}</p>
 
                               {/* Team quick indicator */}
@@ -3004,6 +3167,29 @@ export default function AdminDashboard({
                       })}
                     </div>
                     <Pagination {...projectPagination} />
+
+                    <section className="mt-6 rounded-2xl border border-amber-100 bg-amber-50/40 p-4">
+                      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <h3 className="text-lg font-black text-slate-900">Cargas secundarias / Soportes diarios</h3>
+                          <p className="text-xs text-slate-500">Tareas cortas nacidas desde partes diarios, separadas de los proyectos formales.</p>
+                        </div>
+                        <span className="rounded-full bg-white px-3 py-1 text-[10px] font-black text-amber-700">{sortedSecondaryWorkItems.length} cargas</span>
+                      </div>
+                      {sortedSecondaryWorkItems.length === 0 ? <p className="rounded-xl border border-dashed border-amber-200 bg-white/70 p-6 text-center text-xs text-slate-400">Todavía no hay cargas secundarias registradas.</p> : <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                        {sortedSecondaryWorkItems.map((item) => {
+                          const itemLogs = workLogs.filter((log) => log.secondaryWorkItemId === item.id);
+                          const employeesForItem = item.employeeNames?.length ? item.employeeNames : Array.from(new Set(itemLogs.map((log) => employees.find((employee) => employee.id === log.employeeId)?.name).filter(Boolean))) as string[];
+                          return <article key={item.id} className="rounded-xl border border-amber-100 bg-white p-4 text-xs shadow-sm">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><h4 className="text-sm font-black text-slate-900">{item.name}</h4><p className="text-[10px] font-semibold text-slate-500">Última actividad: {item.lastActivityAt ? String(item.lastActivityAt).slice(0, 10) : '-'}</p></div><span className={`self-start rounded-full px-2 py-1 text-[9px] font-black ${item.status === 'ARCHIVED' ? 'bg-slate-100 text-slate-500' : 'bg-emerald-50 text-emerald-700'}`}>{item.status === 'ARCHIVED' ? 'Archivada' : 'Activa'}</span></div>
+                            <dl className="mt-3 grid grid-cols-2 gap-2"><div className="rounded-lg bg-slate-50 p-2"><dt className="text-[9px] font-black uppercase text-slate-400">Último agente</dt><dd className="font-bold text-slate-800">{item.lastEmployeeName || '-'}</dd></div><div className="rounded-lg bg-slate-50 p-2"><dt className="text-[9px] font-black uppercase text-slate-400">Partes cargados</dt><dd className="font-bold text-slate-800">{item.workLogsCount ?? itemLogs.length}</dd></div></dl>
+                            <p className="mt-3 text-[10px] text-slate-500"><b>Empleados:</b> {employeesForItem.length ? employeesForItem.slice(0, 5).join(', ') : '-'}</p>
+                            <div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => setSelectedSecondaryWorkItemId(selectedSecondaryWorkItemId === item.id ? null : item.id)} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] font-bold text-amber-800">{selectedSecondaryWorkItemId === item.id ? 'Ocultar partes' : 'Ver partes'}</button>{item.status !== 'ARCHIVED' && <button type="button" onClick={() => secondaryWorkItemsApi.update(item.id, { status: 'ARCHIVED' }).then(() => { triggerAlert('success', 'Carga secundaria archivada.'); onRefresh?.(); }).catch(() => triggerAlert('error', 'No se pudo archivar la carga secundaria.'))} className="rounded-lg border px-3 py-2 text-[10px] font-bold text-slate-600">Archivar</button>}</div>
+                          </article>;
+                        })}
+                      </div>}
+                      {selectedSecondaryWorkItem && <div className="mt-4 rounded-xl border bg-white p-4"><h4 className="font-black text-slate-900">Partes de {selectedSecondaryWorkItem.name}</h4><div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">{selectedSecondaryLogs.length ? selectedSecondaryLogs.map((log) => { const employee = employees.find((row) => row.id === log.employeeId); return <article key={log.id} className="rounded-lg bg-slate-50 p-3"><div className="flex flex-wrap justify-between gap-2"><b>{employee?.name || 'Empleado'}</b><span className="text-[10px] font-bold text-slate-400">{log.date} · {log.hours ?? 0} h</span></div><p className="mt-1 font-bold text-amber-700">{log.title}</p><p className="mt-1 whitespace-pre-wrap text-slate-600">{log.description}</p></article>; }) : <p className="text-xs text-slate-400">No hay partes asociados cargados en memoria. Usá Actualizar para refrescar.</p>}</div></div>}
+                    </section>
                     </>
                   )}
                 </div>
@@ -3406,11 +3592,15 @@ export default function AdminDashboard({
         )}
 
         {/* TAB 4: USER ADMINISTRATION (SPLIT VIEW WITH USER GRID AND NEW REGISTRATION) */}
+        {adminTab === 'dependencies' && (
+          <DependencyAdmin dependencies={dependencies} onCreate={onCreateDependency} onUpdate={onUpdateDependency} onRemove={onRemoveDependency} />
+        )}
+
         {adminTab === 'settings' && (
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
+          <div className="space-y-8">
             
             {/* Left Area: Complete user list & credentials management */}
-            <div className="xl:col-span-7 bg-white p-6 rounded-2xl border border-gray-150 shadow-sm space-y-6">
+            <div className="bg-white p-6 rounded-2xl border border-gray-150 shadow-sm space-y-6">
               <div>
                 <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">
                   <span className="p-1.5 bg-slate-150 rounded-xl text-indigo-700">
@@ -3424,15 +3614,15 @@ export default function AdminDashboard({
               </div>
 
               {/* Responsive Table of Users with Inline Editing */}
-              <div className="overflow-x-auto rounded-xl border border-slate-150">
-                <table className="w-full text-left border-collapse text-xs">
+              <div className="overflow-x-auto lg:overflow-visible rounded-xl border border-slate-150">
+                <table className="w-full min-w-[760px] lg:min-w-0 table-fixed text-left border-collapse text-xs">
                   <thead>
                     <tr className="border-b border-slate-100 text-[10px] text-slate-500 uppercase font-bold bg-slate-50">
-                      <th className="py-3.5 px-4 font-black">Agente / Cargo</th>
-                      <th className="py-3.5 px-4 font-black">CUIL / Usuario</th>
-                      <th className="py-3.5 px-4 font-black">Clave de Acceso</th>
-                      <th className="py-3.5 px-4 font-black">Nivel de Permisos</th>
-                      <th className="py-3.5 px-4 font-black text-right">Acciones</th>
+                      <th className="py-3.5 px-4 font-black w-[32%]">Agente / Cargo</th>
+                      <th className="py-3.5 px-4 font-black w-[18%]">CUIL / Usuario</th>
+                      <th className="py-3.5 px-4 font-black w-[20%]">Clave de Acceso</th>
+                      <th className="py-3.5 px-4 font-black w-[18%]">Nivel de Permisos</th>
+                      <th className="py-3.5 px-4 font-black text-right w-[12%]">Acciones</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -3467,7 +3657,7 @@ export default function AdminDashboard({
                                   cuil: formatCuilString(e.target.value)
                                 });
                               }}
-                              className="w-32 px-2.5 py-1.5 border border-slate-250 rounded-lg font-mono text-[11px] bg-slate-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-800 font-bold"
+                              className="w-full max-w-36 px-2.5 py-1.5 border border-slate-250 rounded-lg font-mono text-[11px] bg-slate-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-800 font-bold"
                               placeholder="XX-XXXXXXXX-X"
                             />
                           </td>
@@ -3492,7 +3682,7 @@ export default function AdminDashboard({
                                     triggerAlert('success', `Contraseña de ${emp.name} restablecida con éxito.`);
                                   }
                                 }}
-                                className="px-2 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-705 inline-flex items-center gap-1.5 font-bold rounded-lg text-[10px] cursor-pointer transition-colors"
+                                className="px-2 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-705 inline-flex items-center gap-1.5 font-bold rounded-lg text-[10px] cursor-pointer transition-colors whitespace-nowrap"
                               >
                                 <Key className="w-3.5 h-3.5 text-indigo-600" />
                                 Resetear
@@ -3512,7 +3702,7 @@ export default function AdminDashboard({
                                 });
                                 triggerAlert('success', `Jerarquía modificada: ${emp.name} ahora es ${newAdminStatus ? 'Directivo/Admin' : 'Agente Regular'}.`);
                               }}
-                              className={`px-2.5 py-1 rounded-full text-[9px] uppercase font-extrabold border transition-all cursor-pointer inline-flex items-center gap-1 ${
+                              className={`px-2.5 py-1 rounded-full text-[9px] uppercase font-extrabold border transition-all cursor-pointer inline-flex items-center gap-1 whitespace-nowrap ${
                                 emp.isAdmin 
                                   ? 'bg-rose-50 border-rose-200 text-rose-700 font-black' 
                                   : 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200'
@@ -3559,7 +3749,7 @@ export default function AdminDashboard({
             </div>
 
             {/* Right Area: NEW EMPLOYEE REGISTRY FORM */}
-            <div className="xl:col-span-5 bg-white p-6 rounded-2xl border border-gray-150 shadow-sm self-start space-y-6">
+            <div className="bg-white p-6 rounded-2xl border border-gray-150 shadow-sm space-y-6">
               <div>
                 <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">
                   <span className="p-1.5 bg-indigo-50 rounded-xl text-indigo-700">
@@ -3572,7 +3762,7 @@ export default function AdminDashboard({
                 </p>
               </div>
 
-              <form onSubmit={handleCreateEmployee} className="space-y-4">
+              <form onSubmit={handleCreateEmployee} className="space-y-4 max-w-3xl">
                 <div className="space-y-3.5">
                   <div>
                     <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1.5">Nombre Completo</label>
@@ -3640,10 +3830,11 @@ export default function AdminDashboard({
                       value={newEmpDependency}
                       onChange={(e) => setNewEmpDependency(e.target.value)}
                       className="w-full text-xs bg-white border border-gray-355 rounded-xl px-3 py-2.5"
+                      required
                     >
-                      <option value="Oficina de Sistemas y Tecnología (SyTec)">Oficina de Sistemas y Tecnología (SyTec)</option>
-                      {dependencies.map((dep, idx) => (
-                        <option key={idx} value={dep}>{dep}</option>
+                      <option value="">Seleccionar dependencia</option>
+                      {dependencies.filter((dependency) => dependency.isActive).map((dependency) => (
+                        <option key={dependency.id} value={dependency.id}>{dependency.name}</option>
                       ))}
                     </select>
                   </div>
@@ -3674,9 +3865,10 @@ export default function AdminDashboard({
 
                 <button
                   type="submit"
-                  className="w-full cursor-pointer bg-slate-950 hover:bg-indigo-700 text-white font-bold text-xs py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 mt-4"
+                  disabled={isCreatingEmployee}
+                  className="w-full cursor-pointer bg-slate-950 hover:bg-indigo-700 disabled:bg-slate-400 disabled:cursor-not-allowed text-white font-bold text-xs py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 mt-4"
                 >
-                  <Plus className="w-4 h-4" /> Dar de Alta Agente en Sistemas
+                  <Plus className="w-4 h-4" /> {isCreatingEmployee ? 'Creando cuenta...' : 'Dar de Alta Agente en Sistemas'}
                 </button>
               </form>
             </div>
@@ -3742,14 +3934,18 @@ export default function AdminDashboard({
               <form onSubmit={handleSaveAdminSelfProfile} className="mt-6 space-y-5">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Nombre y apellido</label>
+                    <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Nombre</label>
                     <input
                       type="text"
-                      value={adminProfileName}
-                      onChange={(e) => setAdminProfileName(e.target.value)}
+                      value={adminProfileFirstName}
+                      onChange={(e) => { setAdminProfileFirstName(e.target.value); setAdminProfileName(`${e.target.value} ${adminProfileLastName}`.trim()); }}
                       className="w-full text-xs font-semibold border border-gray-300 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-slate-900"
                       required
                     />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Apellido</label>
+                    <input type="text" value={adminProfileLastName} onChange={(e) => { setAdminProfileLastName(e.target.value); setAdminProfileName(`${adminProfileFirstName} ${e.target.value}`.trim()); }} className="w-full text-xs font-semibold border border-gray-300 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-slate-900" />
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Email</label>

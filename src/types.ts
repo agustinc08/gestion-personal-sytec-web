@@ -4,6 +4,7 @@ export interface Employee {
   email?: string;
   avatar: string;
   dependency: string;
+  dependencyId?: string;
   position?: string; // Cargo dclaro por el usuario (e.g., "Oficial Interino")
   guardiasDone: number; // Días de guardia acumulados
   totalLicenseDays: number; // Días iniciales
@@ -16,19 +17,73 @@ export interface Employee {
   isAdmin?: boolean; // Bandera para saber si es administrador/directivo
 }
 
+
+export interface CreateEmployeePayload {
+  name: string;
+  email: string;
+  dependencyId?: string;
+  dependency?: string;
+  position?: string;
+  cuil: string;
+  password: string;
+  totalLicenseDays?: number;
+  strikeDutyOrder?: number;
+  remoteDaysAssigned?: string[];
+  mustChangePassword?: boolean;
+}
+
+export type UpdateEmployeePayload = Partial<Omit<CreateEmployeePayload, 'password'> & {
+  avatar: string;
+  password: string;
+  isAdmin: boolean;
+}>;
+export interface SecondaryWorkItem {
+  id: string;
+  name: string;
+  normalizedName?: string;
+  description?: string;
+  status: 'ACTIVE' | 'ARCHIVED';
+  firstSeenAt?: string;
+  lastActivityAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  createdById?: string;
+  lastEmployeeId?: string;
+  lastEmployeeName?: string;
+  workLogsCount: number;
+  employeeNames: string[];
+  employeeIds?: string[];
+}
+
 export interface WorkLog {
   id: string;
   employeeId: string;
   projectId?: string;
   projectName?: string;
+  secondaryWorkItemId?: string;
+  secondaryWorkItemName?: string;
+  secondaryWorkItemNameInput?: string;
+  workItemType?: 'PROJECT' | 'SECONDARY' | 'FREE_TEXT';
+  displayTitle?: string;
   title: string;
   description: string;
   date: string; // YYYY-MM-DD
   mode: 'presencial' | 'remoto' | 'mixto' | 'licencia';
   activityType?: ActivityType;
   hours?: number;
+  entryTime?: string;
+  exitTime?: string;
 }
 
+
+export interface DailyAttendance {
+  id: string;
+  employeeId: string;
+  date: string;
+  entryTime?: string;
+  exitTime?: string;
+  updatedAt?: string;
+}
 export interface ProjectUpdate {
   id: string;
   authorName: string;
@@ -126,6 +181,7 @@ export interface Project {
   lastDeployDate?: string;
   deadlineStatus?: 'en_termino' | 'proximo' | 'esta_semana' | 'vence_hoy' | 'vencido' | 'sin_fecha';
   updatedAt?: string;
+  lastActivityAt?: string;
   updates?: ProjectUpdate[];
   deployments?: Deployment[];
 }
@@ -191,6 +247,16 @@ export interface StrikeConfig {
   notes?: string;
 }
 
+export interface Dependency {
+  id: string;
+  name: string;
+  description?: string;
+  isActive: boolean;
+  employeeCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Notification {
   id: string;
   type: string;
@@ -199,6 +265,16 @@ export interface Notification {
   link?: string;
   readAt?: string;
   createdAt: string;
+}
+
+export interface Announcement {
+  id: string; title: string; message: string;
+  type: 'GENERAL' | 'STRIKE' | 'SALARY' | 'LICENSE' | 'PROJECT' | 'SYSTEM';
+  priority: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
+  targetRole?: 'ADMIN' | 'EMPLOYEE'; targetDependencyId?: string; targetEmployeeId?: string;
+  startsAt?: string; endsAt?: string; pinned: boolean; isActive: boolean;
+  readAt?: string; createdAt: string; updatedAt: string;
+  targetDependency?: Dependency; targetEmployee?: Employee;
 }
 
 export interface ProjectComment {

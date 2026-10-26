@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Gesti&#243;n SyTec">
+  <defs>
+    <linearGradient id="brand" x1="10" y1="8" x2="54" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#172554"/>
+      <stop offset="0.55" stop-color="#0f172a"/>
+      <stop offset="1" stop-color="#064e3b"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="13" fill="url(#brand)"/>
+  <rect x="13" y="15" width="38" height="27" rx="4" fill="#f8fafc"/>
+  <path d="M13 21h38" stroke="#cbd5e1" stroke-width="2"/>
+  <circle cx="18" cy="18" r="1.4" fill="#ef4444"/>
+  <circle cx="23" cy="18" r="1.4" fill="#f59e0b"/>
+  <circle cx="28" cy="18" r="1.4" fill="#22c55e"/>
+  <path d="M20 29h13M20 35h9" stroke="#334155" stroke-width="3" stroke-linecap="round"/>
+  <path d="M38 31l4 4 7-9" fill="none" stroke="#059669" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M24 48h16" stroke="#e2e8f0" stroke-width="4" stroke-linecap="round"/>
+  <path d="M32 42v6" stroke="#e2e8f0" stroke-width="4" stroke-linecap="round"/>
+</svg>

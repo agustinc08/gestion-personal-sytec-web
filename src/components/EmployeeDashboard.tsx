@@ -1,11 +1,12 @@
-﻿import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { statisticsApi } from '../api/statistics.api';
-import { Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, ActivityType, StatisticsResponse } from '../types';
+import { DailyAttendance, Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, ActivityType, StatisticsResponse, SecondaryWorkItem } from '../types';
 import { activityTypeLabel, deploymentEnvironmentLabel, deploymentStatusLabel, difficultyLabel, licenseStatusLabel, projectStatusLabel } from '../utils/labels';
+import { getArgentinaTodayDateOnly } from '../utils/date';
 import {
   Calendar, CheckCircle, FileText, User, Briefcase, Plus, Clock, 
   MapPin, ShieldAlert, Upload, Download, CheckCircle2, ChevronRight, AlertCircle, FileSpreadsheet,
-  ArrowLeft, History, MessageSquare, Send, BarChart3
+  ArrowLeft, History, MessageSquare, Send, BarChart3, RefreshCw
 } from 'lucide-react';
 import ProjectComments from './ProjectComments';
 import { Pagination, usePagination } from './Pagination';
@@ -14,41 +15,89 @@ interface EmployeeDashboardProps {
   employee: Employee;
   employees: Employee[];
   workLogs: WorkLog[];
+  dailyAttendances: DailyAttendance[];
   projects: Project[];
+  secondaryWorkItems: SecondaryWorkItem[];
   licenseRequests: LicenseRequest[];
   licenseRules: LicenseRule[];
   strikeConfig: StrikeConfig;
   onAddWorkLog: (log: Omit<WorkLog, 'id'>) => Promise<WorkLog> | WorkLog;
+  onUpdateWorkLog: (id: string, payload: Partial<WorkLog>) => Promise<WorkLog>;
+  onSaveAttendance: (payload: Partial<DailyAttendance> & { date: string }) => Promise<DailyAttendance>;
   onUpdateProject?: (proj: Project) => void;
   onAddProjectUpdate?: (projectId: string, update: string | (Partial<ProjectUpdate> & { content: string })) => Promise<Project> | void;
   onAddLicenseRequest: (req: Omit<LicenseRequest, 'id' | 'status' | 'dateRequested'>) => any;
+  onDeleteLicenseRequest: (id: string) => Promise<void>;
   onUpdateAvatar: (employeeId: string, avatarUrl: string | File) => Promise<Employee> | void;
   onUpdateEmployee: (emp: Employee) => void;
   onChangePassword?: (currentPassword: string, newPassword: string) => Promise<void>;
   remindedEmpIds?: string[];
+  onRefresh?: () => void;
 }
 
 export default function EmployeeDashboard({
   employee,
   employees,
   workLogs,
+  dailyAttendances,
   projects,
+  secondaryWorkItems,
   licenseRequests,
   licenseRules,
   strikeConfig,
   onAddWorkLog,
+  onUpdateWorkLog,
+  onSaveAttendance,
   onUpdateProject,
   onAddProjectUpdate,
   onAddLicenseRequest,
+  onDeleteLicenseRequest,
   onUpdateAvatar,
   onUpdateEmployee,
   onChangePassword,
   remindedEmpIds = [],
+  onRefresh,
 }: EmployeeDashboardProps) {
-  const [activeTab, setActiveTab] = useState<'carga_diaria' | 'proyectos' | 'statistics' | 'licencias' | 'perfil'>('carga_diaria');
+  const initialActiveTab = () => {
+    const section = new URLSearchParams(window.location.search).get('seccion');
+    const map: Record<string, 'carga_diaria' | 'proyectos' | 'statistics' | 'licencias' | 'perfil'> = {
+      'parte-diario': 'carga_diaria',
+      proyectos: 'proyectos',
+      estadisticas: 'statistics',
+      licencias: 'licencias',
+      perfil: 'perfil',
+      empleados: 'perfil',
+      comunicados: 'perfil',
+      guardias: 'perfil',
+      asistencia: 'carga_diaria',
+    };
+    return section && map[section] ? map[section] : 'carga_diaria';
+  };
+  const [activeTab, setActiveTab] = useState<'carga_diaria' | 'proyectos' | 'statistics' | 'licencias' | 'perfil'>(initialActiveTab);
+  useEffect(() => {
+    const onNavigate = (event: Event) => {
+      const section = (event as CustomEvent<{ section?: string }>).detail?.section;
+      const map: Record<string, typeof activeTab> = {
+        'parte-diario': 'carga_diaria',
+        proyectos: 'proyectos',
+        estadisticas: 'statistics',
+        licencias: 'licencias',
+        perfil: 'perfil',
+        empleados: 'perfil',
+        comunicados: 'perfil',
+        guardias: 'perfil',
+        asistencia: 'carga_diaria',
+      };
+      if (section && map[section]) setActiveTab(map[section]);
+    };
+    window.addEventListener('sytec:navigate', onNavigate);
+    return () => window.removeEventListener('sytec:navigate', onNavigate);
+  }, []);
 
   // Selected project state
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [projectTimelinePage, setProjectTimelinePage] = useState(1);
+  useEffect(() => setProjectTimelinePage(1), [selectedProjectId]);
   const [newUpdateText, setNewUpdateText] = useState('');
   const [newUpdateTitle, setNewUpdateTitle] = useState('');
   const [newUpdateStatus, setNewUpdateStatus] = useState('');
@@ -79,24 +128,59 @@ export default function EmployeeDashboard({
   const [logDescription, setLogDescription] = useState('');
   const [logMode, setLogMode] = useState<WorkLog['mode']>('presencial');
   const [logProjectId, setLogProjectId] = useState('');
+  const [workItemType, setWorkItemType] = useState<'PROJECT' | 'SECONDARY'>('PROJECT');
+  const [secondaryWorkItemId, setSecondaryWorkItemId] = useState('');
+  const [secondaryWorkItemName, setSecondaryWorkItemName] = useState('');
   const [logActivityType, setLogActivityType] = useState<ActivityType>('PROJECT');
   const [logHours, setLogHours] = useState('');
+  const [attendanceDate, setAttendanceDate] = useState(getArgentinaTodayDateOnly());
+  const [attendanceEntryTime, setAttendanceEntryTime] = useState('');
+  const [attendanceExitTime, setAttendanceExitTime] = useState('');
+  const [isSavingAttendance, setIsSavingAttendance] = useState(false);
   const [overrideDate, setOverrideDate] = useState(false);
-  const [logDate, setLogDate] = useState(new Date().toISOString().split('T')[0]);
+  const [logDate, setLogDate] = useState(getArgentinaTodayDateOnly());
   const [dailyView, setDailyView] = useState<'list' | 'calendar'>('list');
   const [dailyYear, setDailyYear] = useState(String(new Date().getFullYear()));
   const [dailyMonth, setDailyMonth] = useState(String(new Date().getMonth() + 1));
   const [dailyModeFilter, setDailyModeFilter] = useState('todos');
   const [dailyActivityFilter, setDailyActivityFilter] = useState('todos');
   const [dailyProjectFilter, setDailyProjectFilter] = useState('todos');
-  const [selectedCalendarDate, setSelectedCalendarDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState(getArgentinaTodayDateOnly());
   const [isSavingWorkLog, setIsSavingWorkLog] = useState(false);
+  const [editingWorkLogId, setEditingWorkLogId] = useState<string | null>(null);
+  const [isRefreshingDashboard, setIsRefreshingDashboard] = useState(false);
+  const [refreshMessage, setRefreshMessage] = useState('');
   const workLogFormRef = useRef<HTMLDivElement>(null);
 
   // Password change states
   const [currentPasswordInput, setCurrentPasswordInput] = useState('');
   const [newPasswordInput, setNewPasswordInput] = useState('');
   const [confirmNewPasswordInput, setConfirmNewPasswordInput] = useState('');
+  const initialNameParts = employee.name.trim().split(/\s+/);
+  const [profileFirstName, setProfileFirstName] = useState(initialNameParts.shift() || '');
+  const [profileLastName, setProfileLastName] = useState(initialNameParts.join(' '));
+  const [profileEmail, setProfileEmail] = useState(employee.email || '');
+  const [profileEditing, setProfileEditing] = useState(false);
+
+  useEffect(() => {
+    if (profileEditing) return;
+    const parts = employee.name.trim().split(/\s+/);
+    setProfileFirstName(parts.shift() || ''); setProfileLastName(parts.join(' ')); setProfileEmail(employee.email || '');
+  }, [employee.name, employee.email, profileEditing]);
+
+  const saveProfile = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const fullName = `${profileFirstName} ${profileLastName}`.trim();
+    const email = profileEmail.trim();
+    if (!fullName || !email) {
+      triggerAlert('error', 'No se pudo actualizar el perfil');
+      return;
+    }
+    try {
+      await Promise.resolve(onUpdateEmployee({ ...employee, name: fullName, email }));
+      setProfileEditing(false); triggerAlert('success', 'Perfil actualizado correctamente');
+    } catch { triggerAlert('error', 'No se pudo actualizar el perfil'); }
+  };
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -154,15 +238,41 @@ export default function EmployeeDashboard({
     mode === 'mixto' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
     'bg-purple-50 text-purple-700 border-purple-100'
   );
+  const dayKey = (value?: string) => String(value || '').slice(0, 10);
+  const formatAttendanceTime = (attendance?: DailyAttendance) => (attendance?.entryTime || attendance?.exitTime) ? `Horario: ${attendance.entryTime || '--:--'} a ${attendance.exitTime || '--:--'}` : '';
+  const attendanceByDate = React.useMemo(() => Object.fromEntries(dailyAttendances.filter((row) => row.employeeId === employee.id).map((row) => [dayKey(row.date), row])), [dailyAttendances, employee.id]);
   const toLocalDateInput = (date: Date) => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   };
+  useEffect(() => {
+    const current = attendanceByDate[attendanceDate];
+    setAttendanceEntryTime(current?.entryTime || '');
+    setAttendanceExitTime(current?.exitTime || '');
+  }, [attendanceByDate, attendanceDate]);
+
+  const handleAttendanceSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (attendanceEntryTime && attendanceExitTime && attendanceExitTime < attendanceEntryTime) {
+      triggerAlert('error', 'La hora de salida no puede ser anterior a la hora de entrada.');
+      return;
+    }
+    setIsSavingAttendance(true);
+    try {
+      await onSaveAttendance({ date: attendanceDate, entryTime: attendanceEntryTime || undefined, exitTime: attendanceExitTime || undefined });
+      triggerAlert('success', 'Horario de jornada actualizado.');
+    } catch (error: any) {
+      const message = error?.response?.data?.message;
+      triggerAlert('error', Array.isArray(message) ? message.join(' ') : message || 'No se pudo guardar el horario de jornada.');
+    } finally {
+      setIsSavingAttendance(false);
+    }
+  };
   const dailyFilteredLogs = myWorkLogs.filter((log) => (
-    String(new Date(`${log.date}T00:00:00`).getFullYear()) === dailyYear &&
-    String(new Date(`${log.date}T00:00:00`).getMonth() + 1) === dailyMonth &&
+    (log.date || '').slice(0, 4) === dailyYear &&
+    String(Number((log.date || '').slice(5, 7))) === dailyMonth &&
     (dailyModeFilter === 'todos' || log.mode === dailyModeFilter) &&
     (dailyActivityFilter === 'todos' || log.activityType === dailyActivityFilter) &&
     (dailyProjectFilter === 'todos' || log.projectId === dailyProjectFilter)
@@ -180,7 +290,7 @@ export default function EmployeeDashboard({
     ...Array.from({ length: leadingEmptyDays }, () => null),
     ...Array.from({ length: monthDays }, (_, idx) => new Date(calendarYear, calendarMonthIndex, idx + 1)),
   ];
-  const todayIso = new Date().toISOString().split('T')[0];
+  const todayIso = getArgentinaTodayDateOnly();
   const monthTitle = monthStart.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
   const setCalendarMonth = (year: number, monthIndex: number) => {
     const next = new Date(year, monthIndex, 1);
@@ -192,6 +302,12 @@ export default function EmployeeDashboard({
     setLogDate(date);
     setOverrideDate(true);
     workLogFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  const resetWorkLogForm = () => {
+    setEditingWorkLogId(null); setLogTitle(''); setLogDescription(''); setLogMode('presencial'); setLogProjectId(''); setWorkItemType('PROJECT'); setSecondaryWorkItemId(''); setSecondaryWorkItemName(''); setLogActivityType('PROJECT'); setLogHours(''); setOverrideDate(false); setLogDate(getArgentinaTodayDateOnly());
+  };
+  const editWorkLog = (log: WorkLog) => {
+    setEditingWorkLogId(log.id); setLogTitle(log.title); setLogDescription(log.description); setLogMode(log.mode); setLogProjectId(log.projectId || ''); setWorkItemType(log.secondaryWorkItemId ? 'SECONDARY' : 'PROJECT'); setSecondaryWorkItemId(log.secondaryWorkItemId || ''); setSecondaryWorkItemName(log.secondaryWorkItemName || ''); setLogActivityType(log.activityType || 'PROJECT'); setLogHours(log.hours === undefined ? '' : String(log.hours)); setLogDate(log.date); setOverrideDate(true); workLogFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
   const getDeadlineLabel = (project: Project) => {
     if (!project.deadline) return 'Sin fecha límite';
@@ -264,43 +380,52 @@ export default function EmployeeDashboard({
   const handleLogSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!logTitle.trim() || !logDescription.trim()) {
-      triggerAlert('error', 'Por favor, completa el título y la descripción del trabajo.');
+      triggerAlert('error', 'Por favor, completá el título y la descripción del trabajo.');
       return;
     }
 
-    const submittedTitle = logTitle;
-    const submittedProjectId = logProjectId;
-    const submittedDate = overrideDate ? logDate : new Date().toISOString().split('T')[0];
+    const submittedTitle = logTitle.trim();
+    const submittedProjectId = workItemType === 'PROJECT' ? logProjectId : '';
+    const submittedSecondaryWorkItemId = workItemType === 'SECONDARY' ? secondaryWorkItemId : '';
+    const submittedSecondaryWorkItemName = workItemType === 'SECONDARY' ? (secondaryWorkItemName || submittedTitle).trim() : '';
+    if (workItemType === 'SECONDARY' && !submittedSecondaryWorkItemId && !submittedSecondaryWorkItemName) {
+      triggerAlert('error', 'Elegí o escribí una carga secundaria.');
+      return;
+    }
+
+    const submittedDate = overrideDate ? logDate : getArgentinaTodayDateOnly();
     setIsSavingWorkLog(true);
     try {
-      await Promise.resolve(onAddWorkLog({
+      const payload = {
         employeeId: employee.id,
         projectId: submittedProjectId || undefined,
+        secondaryWorkItemId: submittedSecondaryWorkItemId || undefined,
+        secondaryWorkItemName: submittedSecondaryWorkItemName || undefined,
         title: submittedTitle,
         description: logDescription,
         date: submittedDate,
         mode: logMode,
         activityType: logActivityType,
         hours: logHours ? Number(logHours) : undefined,
-      }));
+      };
+      if (editingWorkLogId) await onUpdateWorkLog(editingWorkLogId, payload);
+      else await Promise.resolve(onAddWorkLog(payload));
 
-      setLogTitle('');
-      setLogDescription('');
-      setLogMode('presencial');
-      setLogProjectId('');
-      setLogActivityType('PROJECT');
-      setLogHours('');
-      setOverrideDate(false);
+      const wasEditing = !!editingWorkLogId;
+      resetWorkLogForm();
       setSelectedCalendarDate(submittedDate);
 
-      const match = projects.find(p => p.id === submittedProjectId || (p.name || '').toLowerCase().trim() === (submittedTitle || '').toLowerCase().trim());
+      const match = projects.find(p => p.id === submittedProjectId || (p.name || '').toLowerCase().trim() === submittedTitle.toLowerCase());
       if (match) {
-        triggerAlert('success', `Trabajo diario guardado y vinculado al proyecto "${match.name}".`);
+        triggerAlert('success', wasEditing ? 'Parte diario actualizado correctamente.' : `Trabajo diario guardado y vinculado al proyecto "${match.name}".`);
+      } else if (workItemType === 'SECONDARY') {
+        const itemName = submittedSecondaryWorkItemName || secondaryWorkItems.find((item) => item.id === submittedSecondaryWorkItemId)?.name || submittedTitle;
+        triggerAlert('success', wasEditing ? 'Parte diario actualizado correctamente.' : `Trabajo diario guardado como carga secundaria "${itemName}".`);
       } else {
-        triggerAlert('success', 'Trabajo diario registrado con éxito.');
+        triggerAlert('success', wasEditing ? 'Parte diario actualizado correctamente.' : 'Trabajo diario registrado con éxito.');
       }
-    } catch {
-      triggerAlert('error', 'No se pudieron cargar los registros.');
+    } catch (error: any) {
+      triggerAlert('error', error?.response?.data?.message || 'No se pudieron guardar los cambios.');
     } finally {
       setIsSavingWorkLog(false);
     }
@@ -334,13 +459,13 @@ export default function EmployeeDashboard({
     triggerAlert('success', 'Solicitud de licencia enviada a la Administración para aprobación.');
   };
 
-  // Days calculations
-  // Días tomados: employee.licenseDaysTaken
-  // Días de guardia acumulados que compensan días: employee.guardiasDone
-  // Días restantes a tomar: (employee.totalLicenseDays + employee.guardiasDone) - employee.licenseDaysTaken
-  const remainingDaysToTake = (employee.totalLicenseDays + employee.guardiasDone) - employee.licenseDaysTaken;
+  const safeDayNumber = (value: unknown) => {
+    const numeric = Number(value) || 0;
+    return Object.is(numeric, -0) ? 0 : numeric;
+  };
+  const remainingDaysToTake = safeDayNumber(safeDayNumber(employee.totalLicenseDays) - safeDayNumber(employee.licenseDaysTaken));
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getArgentinaTodayDateOnly();
   const hasLogToday = workLogs.some(log => log.employeeId === employee.id && log.date === todayStr);
   const wasReminded = remindedEmpIds.includes(employee.id);
 
@@ -453,7 +578,7 @@ export default function EmployeeDashboard({
       </div>
 
       {/* Internal Tabs Switcher */}
-      <div className="flex border-b border-gray-200 mb-8 overflow-x-auto scrollbar-none gap-2">
+      <div className="flex flex-col gap-3 border-b border-gray-200 mb-8 lg:flex-row lg:items-center lg:justify-between"><div className="flex overflow-x-auto scrollbar-none gap-2">
         <button
           onClick={() => setActiveTab('carga_diaria')}
           className={`px-5 py-3 font-semibold text-sm border-b-2 flex items-center gap-2 whitespace-nowrap transition-all duration-200 ${
@@ -510,19 +635,54 @@ export default function EmployeeDashboard({
           Mi Perfil ({employee.dependency})
         </button>
       </div>
+        {onRefresh && <div className="mb-2 flex flex-wrap items-center gap-2 self-start lg:self-auto"><button type="button" onClick={async () => { setIsRefreshingDashboard(true); setRefreshMessage(''); try { await Promise.resolve(onRefresh()); setRefreshMessage('Datos actualizados'); } catch { triggerAlert('error', 'No se pudieron actualizar los datos.'); } finally { setIsRefreshingDashboard(false); window.setTimeout(() => setRefreshMessage(''), 2500); } }} disabled={isRefreshingDashboard} className="rounded-xl border bg-white px-3 py-2 text-xs font-bold text-slate-700 inline-flex items-center gap-2 disabled:opacity-60"><RefreshCw className={`h-3.5 w-3.5 text-indigo-600 ${isRefreshingDashboard ? 'animate-spin' : ''}`} />Actualizar</button>{refreshMessage && <span className="rounded-lg bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">{refreshMessage}</span>}</div>}
+      </div>
 
       {/* Main Content Areas */}
       <div className="grid grid-cols-1 gap-8">
         {/* TAB 1: CARGA DIARIA & HISTORIAL */}
         {activeTab === 'carga_diaria' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          <div className="space-y-8">
+            <div className="space-y-8">
+              <div className="bg-white p-6 rounded-2xl border border-gray-150 shadow-sm">
+                <h3 className="text-lg font-bold text-gray-900 mb-2 flex items-center gap-2"><Clock className="w-5 h-5 text-indigo-600" /> Horario de jornada</h3>
+                <p className="mb-4 text-xs text-slate-500">Opcional y separado de las actividades. Se guarda una vez por día.</p>
+                <form onSubmit={handleAttendanceSubmit} className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(10rem,1fr)_minmax(8rem,0.8fr)_minmax(8rem,0.8fr)_auto] md:items-end">
+                <label className="block text-[10px] font-bold uppercase text-slate-500">Fecha
+                  <input type="date" value={attendanceDate} onChange={(event) => setAttendanceDate(event.target.value)} max={getArgentinaTodayDateOnly()} className="mt-1 w-full rounded-xl border px-3 py-2 text-xs" />
+                </label>
+                <div className="grid grid-cols-2 gap-3 md:contents">
+                  <label className="text-[10px] font-bold uppercase text-slate-500">Entrada
+                    <input type="time" value={attendanceEntryTime} onChange={(event) => setAttendanceEntryTime(event.target.value)} className="mt-1 w-full rounded-xl border px-3 py-2 text-xs" />
+                  </label>
+                  <label className="text-[10px] font-bold uppercase text-slate-500">Salida
+                    <input type="time" value={attendanceExitTime} onChange={(event) => setAttendanceExitTime(event.target.value)} className="mt-1 w-full rounded-xl border px-3 py-2 text-xs" />
+                  </label>
+                </div>
+                <button type="submit" disabled={isSavingAttendance} className="w-full whitespace-nowrap rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-bold text-white disabled:opacity-60 md:w-auto">{isSavingAttendance ? 'Guardando horario...' : 'Guardar horario'}</button>
+              </form>
+            </div>
+
             {/* Form Input */}
-            <div ref={workLogFormRef} className="lg:col-span-5 bg-white p-6 rounded-2xl border border-gray-150 shadow-sm self-start">
-              <h3 className="text-lg font-bold text-gray-900 mb-5 flex items-center gap-2">
-                <Plus className="w-5 h-5 text-indigo-600" /> Cargar Trabajo Diario
+              <div ref={workLogFormRef} className="bg-white p-6 rounded-2xl border border-gray-150 shadow-sm">
+              <h3 className="text-lg font-bold text-gray-900 mb-2 flex items-center gap-2">
+                <Plus className="w-5 h-5 text-indigo-600" /> {editingWorkLogId ? 'Editar parte diario' : 'Cargar actividad / trabajo diario'}
               </h3>
+              <p className="mb-5 text-xs text-slate-500">Podés registrar varias actividades en el mismo día. Cada carga representa una tarea puntual.</p>
+              {hasLogToday && !editingWorkLogId && <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800">Ya cargaste al menos una actividad hoy. Podés registrar otra si hiciste más tareas.</div>}
               
               <form onSubmit={handleLogSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <button type="button" onClick={() => { setWorkItemType('PROJECT'); setSecondaryWorkItemId(''); setSecondaryWorkItemName(''); }} className={`rounded-xl border px-4 py-3 text-left text-xs font-bold transition-all ${workItemType === 'PROJECT' ? 'border-indigo-500 bg-indigo-50 text-indigo-800' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}>
+                    Proyecto formal
+                    <span className="mt-1 block text-[10px] font-medium text-slate-500">Vincula el parte a un proyecto vigente creado por ADMIN.</span>
+                  </button>
+                  <button type="button" onClick={() => { setWorkItemType('SECONDARY'); setLogProjectId(''); }} className={`rounded-xl border px-4 py-3 text-left text-xs font-bold transition-all ${workItemType === 'SECONDARY' ? 'border-amber-500 bg-amber-50 text-amber-800' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}>
+                    Carga secundaria / soporte
+                    <span className="mt-1 block text-[10px] font-medium text-slate-500">Agrupa tareas cortas como soporte, arreglos o instalaciones.</span>
+                  </button>
+                </div>
+
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
                     Título o Proyecto
@@ -577,7 +737,8 @@ export default function EmployeeDashboard({
                       const selected = projects.find((project) => project.id === e.target.value);
                       if (selected && !logTitle.trim()) setLogTitle(selected.name);
                     }}
-                    className="w-full text-sm bg-white border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-800 transition-all"
+                    disabled={workItemType === 'SECONDARY'}
+                    className="w-full text-sm bg-white border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-800 transition-all disabled:bg-slate-100 disabled:text-slate-400"
                   >
                     <option value="">Sin proyecto asociado</option>
                     {myAssignedProjects.map((project) => (
@@ -585,6 +746,17 @@ export default function EmployeeDashboard({
                     ))}
                   </select>
                 </div>
+
+                {workItemType === 'SECONDARY' && <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider">Carga secundaria existente
+                    <select value={secondaryWorkItemId} onChange={(e) => { setSecondaryWorkItemId(e.target.value); const selected = secondaryWorkItems.find((item) => item.id === e.target.value); if (selected) { setSecondaryWorkItemName(''); if (!logTitle.trim()) setLogTitle(selected.name); } }} className="mt-2 w-full text-sm bg-white border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-800 transition-all">
+                      <option value="">Crear nueva desde el título</option>{secondaryWorkItems.filter((item) => item.status !== 'ARCHIVED').map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                    </select>
+                  </label>
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider">Nueva carga secundaria
+                    <input value={secondaryWorkItemName} onChange={(e) => { setSecondaryWorkItemName(e.target.value); setSecondaryWorkItemId(''); }} placeholder="Ej. Arreglos PC" className="mt-2 w-full text-sm border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-800 transition-all" />
+                  </label>
+                </div>}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
@@ -650,7 +822,7 @@ export default function EmployeeDashboard({
                       type="button"
                       onClick={() => {
                         setOverrideDate(!overrideDate);
-                        if (overrideDate) setLogDate(new Date().toISOString().split('T')[0]);
+                        if (overrideDate) setLogDate(getArgentinaTodayDateOnly());
                       }}
                       className="text-[10px] font-bold text-indigo-600 uppercase hover:underline"
                     >
@@ -662,7 +834,7 @@ export default function EmployeeDashboard({
                       type="date"
                       value={logDate}
                       onChange={(e) => setLogDate(e.target.value)}
-                      max={new Date().toISOString().split('T')[0]}
+                      max={getArgentinaTodayDateOnly()}
                       className="w-full text-xs rounded-lg border border-gray-300 p-2 font-mono"
                     />
                   ) : (
@@ -686,23 +858,23 @@ export default function EmployeeDashboard({
                   ></textarea>
                 </div>
 
-                <button
-                  type="submit"
-                  disabled={isSavingWorkLog}
-                  className="w-full cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm py-3.5 px-4 rounded-xl transition-all shadow-md hover:shadow-indigo-100 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  <CheckCircle className="w-4 h-4" /> {isSavingWorkLog ? 'Guardando...' : 'Registrar Jornada Laboral'}
-                </button>
+                <div className="flex gap-2">
+                  <button type="submit" disabled={isSavingWorkLog} className="flex-1 cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm py-3.5 px-4 rounded-xl transition-all shadow-md disabled:opacity-60">
+                    {isSavingWorkLog ? 'Guardando...' : editingWorkLogId ? 'Guardar cambios' : 'Registrar actividad'}
+                  </button>
+                  {editingWorkLogId && <button type="button" onClick={resetWorkLogForm} className="rounded-xl border px-4 text-xs font-bold">Cancelar edición</button>}
+                </div>
               </form>
             </div>
 
+            </div>
             {/* History of Worklogs */}
-            <div className="lg:col-span-7 space-y-4">
+            <div className="space-y-4">
               <div className="bg-white border border-gray-150 rounded-2xl p-4 shadow-sm space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
-                    <h3 className="text-lg font-bold text-gray-900">Historial de Registros</h3>
-                    <p className="text-xs text-slate-500">Lista y calendario usan los mismos partes cargados.</p>
+                    <h3 className="text-lg font-bold text-gray-900">Historial de registros</h3>
+                    <p className="text-xs text-slate-500">Todas tus actividades cargadas, con vista de lista y calendario.</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
@@ -764,6 +936,7 @@ export default function EmployeeDashboard({
                   {dailyPagination.rows.map((log) => {
                     const linkedProject = projects.find(p => p.id === log.projectId || (p.name || '').toLowerCase().trim() === (log.title || '').toLowerCase().trim());
                     const isSyncedProject = !!linkedProject;
+                    const linkedSecondary = secondaryWorkItems.find((item) => item.id === log.secondaryWorkItemId);
                     return (
                       <div 
                         key={log.id} 
@@ -786,9 +959,10 @@ export default function EmployeeDashboard({
                           </div>
                           
                           {isSyncedProject && (
-                            <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 rounded px-2 py-0.5 flex items-center gap-1">
-                              <CheckCircle className="w-3 h-3 text-emerald-600" /> Vinculado a Proyecto
-                            </span>
+                            <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 rounded px-2 py-0.5 flex items-center gap-1"><CheckCircle className="w-3 h-3 text-emerald-600" /> Proyecto formal</span>
+                          )}
+                          {linkedSecondary && (
+                            <span className="text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-100 rounded px-2 py-0.5 flex items-center gap-1"><Briefcase className="w-3 h-3 text-amber-600" /> Carga secundaria</span>
                           )}
                         </div>
 
@@ -800,8 +974,11 @@ export default function EmployeeDashboard({
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-bold">
                           {linkedProject && <span className="bg-emerald-50 border border-emerald-100 text-emerald-700 rounded px-2 py-1">{linkedProject.name}</span>}
+                          {linkedSecondary && <span className="bg-amber-50 border border-amber-100 text-amber-700 rounded px-2 py-1">{linkedSecondary.name}</span>}
                           {log.activityType && <span className="bg-indigo-50 border border-indigo-100 text-indigo-700 rounded px-2 py-1">{activityTypeLabel(log.activityType)}</span>}
                           {log.hours !== undefined && <span className="bg-slate-50 border border-slate-200 text-slate-700 rounded px-2 py-1">{log.hours} h</span>}
+                          {formatAttendanceTime(attendanceByDate[dayKey(log.date)]) && <span className="bg-blue-50 border border-blue-100 text-blue-700 rounded px-2 py-1">{formatAttendanceTime(attendanceByDate[dayKey(log.date)])}</span>}
+                          <button type="button" onClick={() => editWorkLog(log)} className="ml-auto rounded border border-indigo-200 bg-indigo-50 px-2 py-1 text-indigo-700">Editar</button>
                         </div>
                       </div>
                     );
@@ -811,8 +988,8 @@ export default function EmployeeDashboard({
               ))}
 
               {dailyView === 'calendar' && (
-                <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
-                  <div className="xl:col-span-8 bg-white border border-gray-150 rounded-2xl p-4 shadow-sm">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                  <div className="lg:col-span-8 bg-white border border-gray-150 rounded-2xl p-4 shadow-sm">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                       <h4 className="text-sm font-black text-slate-900 capitalize">{monthTitle}</h4>
                       <div className="flex items-center gap-2">
@@ -860,7 +1037,7 @@ export default function EmployeeDashboard({
                     </div>
                   </div>
 
-                  <div className="xl:col-span-4 bg-white border border-gray-150 rounded-2xl p-4 shadow-sm">
+                  <div className="lg:col-span-4 bg-white border border-gray-150 rounded-2xl p-4 shadow-sm">
                     <div className="flex items-start justify-between gap-2 mb-3">
                       <div>
                         <h4 className="text-sm font-black text-slate-900">Día seleccionado</h4>
@@ -882,6 +1059,7 @@ export default function EmployeeDashboard({
                       <div className="space-y-3 max-h-[480px] overflow-y-auto pr-1">
                         {selectedDayLogs.map((log) => {
                           const linkedProject = projects.find(p => p.id === log.projectId || (p.name || '').toLowerCase().trim() === (log.title || '').toLowerCase().trim());
+                          const linkedSecondary = secondaryWorkItems.find((item) => item.id === log.secondaryWorkItemId);
                           return (
                             <div key={log.id} className="border border-slate-150 rounded-xl p-3 text-xs">
                               <div className="flex flex-wrap gap-1 mb-2">
@@ -890,7 +1068,8 @@ export default function EmployeeDashboard({
                                 {log.hours !== undefined && <span className="font-bold border border-slate-200 bg-slate-50 text-slate-700 rounded px-2 py-1">{log.hours} h</span>}
                               </div>
                               <h5 className="font-black text-slate-900">{log.title}</h5>
-                              {linkedProject && <p className="mt-1 font-bold text-emerald-700">{linkedProject.name}</p>}
+                              {linkedProject && <p className="mt-1 font-bold text-emerald-700">Proyecto: {linkedProject.name}</p>}
+                              {linkedSecondary && <p className="mt-1 font-bold text-amber-700">Carga secundaria: {linkedSecondary.name}</p>}
                               <p className="mt-2 text-slate-600 whitespace-pre-line leading-relaxed">{log.description}</p>
                             </div>
                           );
@@ -953,6 +1132,7 @@ export default function EmployeeDashboard({
                   mode: undefined
                 }))
               ].sort((a, b) => b.date.localeCompare(a.date));
+              const timelinePages = Math.max(1, Math.ceil(combinedTimeline.length / 10));
 
               return (
                 <div className="space-y-6 animate-fade-in w-full">
@@ -1131,13 +1311,15 @@ export default function EmployeeDashboard({
                         </span>
                       </div>
 
+                      {combinedTimeline.length > 10 && <div className="mb-4 flex items-center justify-end gap-2 text-xs"><button type="button" disabled={projectTimelinePage === 1} onClick={() => setProjectTimelinePage((page) => page - 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Anterior</button><strong>Página {projectTimelinePage} de {timelinePages}</strong><button type="button" disabled={projectTimelinePage === timelinePages} onClick={() => setProjectTimelinePage((page) => page + 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Siguiente</button></div>}
+
                       {combinedTimeline.length === 0 ? (
                         <div className="py-12 text-center text-slate-400 font-sans">
                           <p className="text-xs italic">Aún no se registran partes diarios ni comunicaciones oficiales.</p>
                         </div>
                       ) : (
                         <div className="relative border-l border-indigo-100 pl-4 ml-1.5 space-y-5">
-                          {combinedTimeline.map((item) => {
+                          {combinedTimeline.slice((projectTimelinePage - 1) * 10, projectTimelinePage * 10).map((item) => {
                             const isAdminType = item.type === 'admin';
                             return (
                               <div key={item.id} className="relative">
@@ -1569,6 +1751,10 @@ export default function EmployeeDashboard({
                         }`}>
                           {licenseStatusLabel(req.status)}
                         </span>
+                        {req.status === 'pendiente' && <button type="button" onClick={() => {
+                          if (!window.confirm('¿Seguro que querés eliminar esta solicitud de licencia?')) return;
+                          onDeleteLicenseRequest(req.id).then(() => triggerAlert('success', 'Solicitud eliminada correctamente')).catch((error: any) => triggerAlert('error', error?.response?.data?.message || 'No tenés permisos para eliminar esta solicitud'));
+                        }} className="mt-2 block text-xs font-bold text-rose-600 underline">Eliminar</button>}
                       </div>
                     </div>
                   ))}
@@ -1604,27 +1790,26 @@ export default function EmployeeDashboard({
                   </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="bg-white p-3.5 rounded-2xl border border-indigo-100 shadow-xs">
-                      <span className="block text-[11px] uppercase tracking-wider text-indigo-600 font-bold pb-2 border-b">Guardias en Feria</span>
+                      <span className="block text-[11px] uppercase tracking-wider text-indigo-600 font-bold pb-2 border-b">Días compensatorios por guardia</span>
                       <div className="flex items-baseline gap-1 mt-2">
-                        <span className="text-2xl font-extrabold text-indigo-600 font-mono">+{employee.guardiasDone}</span>
-                        <span className="text-[10px] text-indigo-400 font-bold">d</span>
+                        <span className="text-lg font-extrabold text-indigo-600">{safeDayNumber(employee.guardiasDone) > 0 ? `${safeDayNumber(employee.guardiasDone)} días disponibles` : 'Sin días compensatorios acumulados'}</span>
                       </div>
-                      <p className="text-[9px] text-indigo-450 mt-1">Suman compensatorios.</p>
+                      <p className="text-[9px] text-indigo-450 mt-1">Saldo independiente de las licencias comunes.</p>
                     </div>
 
                     <div className="bg-white p-3.5 rounded-2xl border border-gray-150 shadow-xs">
-                      <span className="block text-[11px] uppercase tracking-wider text-amber-700 font-bold pb-2 border-b">Licencias Tomadas</span>
+                      <span className="block text-[11px] uppercase tracking-wider text-amber-700 font-bold pb-2 border-b">Días de licencia tomados</span>
                       <div className="flex items-baseline gap-1 mt-2">
-                        <span className="text-2xl font-extrabold text-amber-600 font-mono">-{employee.licenseDaysTaken}</span>
+                        <span className="text-2xl font-extrabold text-amber-600 font-mono">{safeDayNumber(employee.licenseDaysTaken)}</span>
                         <span className="text-[10px] text-amber-500 font-bold">d</span>
                       </div>
                       <p className="text-[9px] text-slate-450 mt-1">Gozados por Art. 14.</p>
                     </div>
 
                     <div className="bg-white p-3.5 rounded-2xl border-emerald-250 shadow-xs ring-2 ring-emerald-50 bg-emerald-50/15">
-                      <span className="block text-[11px] uppercase tracking-wider text-emerald-800 font-extrabold pb-2 border-b">Saldo Disponible</span>
+                      <span className="block text-[11px] uppercase tracking-wider text-emerald-800 font-extrabold pb-2 border-b">Saldo de licencia común</span>
                       <div className="flex items-baseline gap-1 mt-2">
-                        <span className="text-2xl font-black text-emerald-600 font-mono">{remainingDaysToTake}</span>
+                        <span className="text-2xl font-black text-emerald-600 font-mono">{safeDayNumber(remainingDaysToTake)}</span>
                         <span className="text-[10px] text-emerald-550 font-extrabold">d</span>
                       </div>
                       <p className="text-[9px] text-emerald-700 font-medium mt-1">Feria / Compensatorio disponible.</p>
@@ -1824,6 +2009,19 @@ export default function EmployeeDashboard({
                       </div>
                     </div>
                   </div>
+
+                  <form onSubmit={saveProfile} className="space-y-3 rounded-2xl border border-slate-100 p-4">
+                    <div className="flex items-center justify-between"><strong className="text-sm">Información personal</strong>{!profileEditing && <button type="button" onClick={() => setProfileEditing(true)} className="text-xs font-bold text-indigo-700">Editar</button>}</div>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <label className="text-[10px] font-bold uppercase text-slate-500">Nombre<input disabled={!profileEditing} value={profileFirstName} onChange={(event) => setProfileFirstName(event.target.value)} required className="mt-1 w-full rounded-xl border px-3 py-2 text-xs disabled:bg-slate-100" /></label>
+                      <label className="text-[10px] font-bold uppercase text-slate-500">Apellido<input disabled={!profileEditing} value={profileLastName} onChange={(event) => setProfileLastName(event.target.value)} className="mt-1 w-full rounded-xl border px-3 py-2 text-xs disabled:bg-slate-100" /></label>
+                      <label className="text-[10px] font-bold uppercase text-slate-500 sm:col-span-2">Email<input type="email" disabled={!profileEditing} value={profileEmail} onChange={(event) => setProfileEmail(event.target.value)} className="mt-1 w-full rounded-xl border px-3 py-2 text-xs disabled:bg-slate-100" /></label>
+                      <label className="text-[10px] font-bold uppercase text-slate-500">CUIL<input disabled value={employee.cuil} className="mt-1 w-full rounded-xl border bg-slate-100 px-3 py-2 text-xs" /></label>
+                      <label className="text-[10px] font-bold uppercase text-slate-500">Rol<input disabled value="Empleado" className="mt-1 w-full rounded-xl border bg-slate-100 px-3 py-2 text-xs" /></label>
+                      <label className="text-[10px] font-bold uppercase text-slate-500 sm:col-span-2">Dependencia<input disabled value={employee.dependency} className="mt-1 w-full rounded-xl border bg-slate-100 px-3 py-2 text-xs" /></label>
+                    </div>
+                    {profileEditing && <div className="flex gap-2"><button className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white">Guardar cambios</button><button type="button" onClick={() => setProfileEditing(false)} className="rounded-xl border px-4 py-2 text-xs font-bold">Cancelar</button></div>}
+                  </form>
 
                   <div className="space-y-4 pt-1">
                     <div>

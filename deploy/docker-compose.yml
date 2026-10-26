@@ -1,0 +1,38 @@
+# Web de Gestión Personal SYTEC. Un archivo para los dos entornos: ENV los distingue.
+#
+# deploy.yml (sytec-pjn/ci-workflows) lo copia a /opt/docker/gestion-personal-sytec-web antes de levantar, así
+# que este archivo es la copia autoritativa: editar el del servidor no sirve, el próximo deploy lo
+# pisa. ENV e IMAGE_TAG los exporta deploy.yml; APP_DOMAIN y APP_PATH llegan por compose-vars (ver
+# ci.yml).
+#
+# Sitio estático, sin .env ni base de datos: sólo proxy-network. La API la rutea Traefik directo
+# (stack gestion-personal-sytec-api), no este contenedor.
+name: gestion-personal-sytec-web-${ENV}
+
+services:
+  web:
+    image: ghcr.io/sytec-pjn/gestion-personal-sytec-web:${IMAGE_TAG}
+    container_name: gestion-personal-sytec-web-${ENV}
+    restart: unless-stopped
+    mem_limit: 64m
+    networks:
+      - proxy-network
+    labels:
+      - "traefik.enable=true"
+      # Path exacto o con barra, y no PathPrefix a secas: /gestion-personal-sytec matchearía también
+      # /gestion-personal-sytec-dev y /gestion-personal-sytec-api.
+      - "traefik.http.routers.gestion-personal-sytec-web-${ENV}.rule=Host(`${APP_DOMAIN}`) && (Path(`${APP_PATH}`) || PathPrefix(`${APP_PATH}/`))"
+      - "traefik.http.routers.gestion-personal-sytec-web-${ENV}.entrypoints=websecure"
+      - "traefik.http.routers.gestion-personal-sytec-web-${ENV}.tls=true"
+      - "traefik.http.routers.gestion-personal-sytec-web-${ENV}.middlewares=gestion-personal-sytec-web-${ENV}-barra,gestion-personal-sytec-web-${ENV}-strip"
+      # Los assets se piden relativos al prefijo: la URL canónica lleva barra final.
+      # /gestion-personal-sytec -> /gestion-personal-sytec/
+      - "traefik.http.middlewares.gestion-personal-sytec-web-${ENV}-barra.redirectregex.regex=^(https?://[^/]+${APP_PATH})$$"
+      - "traefik.http.middlewares.gestion-personal-sytec-web-${ENV}-barra.redirectregex.replacement=$${1}/"
+      - "traefik.http.middlewares.gestion-personal-sytec-web-${ENV}-barra.redirectregex.permanent=true"
+      - "traefik.http.middlewares.gestion-personal-sytec-web-${ENV}-strip.stripprefix.prefixes=${APP_PATH}"
+      - "traefik.http.services.gestion-personal-sytec-web-${ENV}.loadbalancer.server.port=80"
+
+networks:
+  proxy-network:
+    external: true

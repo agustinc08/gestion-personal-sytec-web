@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { statisticsApi } from '../api/statistics.api';
-import { CreateEmployeePayload, DailyAttendance, Dependency, Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, LicenseArticle, ActivityType, StatisticsResponse } from '../types';
+import { secondaryWorkItemsApi } from '../api/secondaryWorkItems.api';
+import { CreateEmployeePayload, DailyAttendance, Dependency, Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, LicenseArticle, ActivityType, StatisticsResponse, SecondaryWorkItem } from '../types';
 import { activityTypeLabel, deploymentEnvironmentLabel, deploymentStatusLabel, difficultyLabel, licenseStatusLabel, projectStatusLabel, statColumnLabel } from '../utils/labels';
 import { getArgentinaTodayDateOnly } from '../utils/date';
 import { 
@@ -19,6 +20,7 @@ interface AdminDashboardProps {
   workLogs: WorkLog[];
   dailyAttendances: DailyAttendance[];
   projects: Project[];
+  secondaryWorkItems: SecondaryWorkItem[];
   licenseRequests: LicenseRequest[];
   licenseRules: LicenseRule[];
   licenseArticles: LicenseArticle[];
@@ -62,6 +64,7 @@ export default function AdminDashboard({
   workLogs,
   dailyAttendances,
   projects,
+  secondaryWorkItems,
   licenseRequests,
   licenseRules,
   licenseArticles,
@@ -197,6 +200,7 @@ export default function AdminDashboard({
 
   // Selected project for detail view state
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [selectedSecondaryWorkItemId, setSelectedSecondaryWorkItemId] = useState<string | null>(null);
   const [projectTimelinePage, setProjectTimelinePage] = useState(1);
   useEffect(() => setProjectTimelinePage(1), [selectedProjectId]);
   const [isEditingProject, setIsEditingProject] = useState(false);
@@ -569,6 +573,9 @@ export default function AdminDashboard({
     (projectRedesignFilter === 'todos' || String(!!proj.needsRedesign || proj.status === 'necesita_rediseno') === projectRedesignFilter) &&
     (projectReworkFilter === 'todos' || String(!!proj.needsRework || proj.status === 'necesita_rehacer') === projectReworkFilter)
   )).sort((a, b) => String(b.lastActivityAt || b.updatedAt || '').localeCompare(String(a.lastActivityAt || a.updatedAt || '')));
+  const sortedSecondaryWorkItems = [...secondaryWorkItems].sort((a, b) => String(b.lastActivityAt || b.updatedAt || '').localeCompare(String(a.lastActivityAt || a.updatedAt || '')));
+  const selectedSecondaryWorkItem = selectedSecondaryWorkItemId ? secondaryWorkItems.find((item) => item.id === selectedSecondaryWorkItemId) : null;
+  const selectedSecondaryLogs = selectedSecondaryWorkItemId ? workLogs.filter((log) => log.secondaryWorkItemId === selectedSecondaryWorkItemId).sort((a, b) => b.date.localeCompare(a.date)) : [];
   const adminFilteredLicenses = licenseRequests.filter((req) => {
     const sender = employees.find((employee) => employee.id === req.employeeId);
     const query = licenseSearchQuery.toLowerCase();
@@ -3160,6 +3167,29 @@ export default function AdminDashboard({
                       })}
                     </div>
                     <Pagination {...projectPagination} />
+
+                    <section className="mt-6 rounded-2xl border border-amber-100 bg-amber-50/40 p-4">
+                      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <h3 className="text-lg font-black text-slate-900">Cargas secundarias / Soportes diarios</h3>
+                          <p className="text-xs text-slate-500">Tareas cortas nacidas desde partes diarios, separadas de los proyectos formales.</p>
+                        </div>
+                        <span className="rounded-full bg-white px-3 py-1 text-[10px] font-black text-amber-700">{sortedSecondaryWorkItems.length} cargas</span>
+                      </div>
+                      {sortedSecondaryWorkItems.length === 0 ? <p className="rounded-xl border border-dashed border-amber-200 bg-white/70 p-6 text-center text-xs text-slate-400">Todavía no hay cargas secundarias registradas.</p> : <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                        {sortedSecondaryWorkItems.map((item) => {
+                          const itemLogs = workLogs.filter((log) => log.secondaryWorkItemId === item.id);
+                          const employeesForItem = item.employeeNames?.length ? item.employeeNames : Array.from(new Set(itemLogs.map((log) => employees.find((employee) => employee.id === log.employeeId)?.name).filter(Boolean))) as string[];
+                          return <article key={item.id} className="rounded-xl border border-amber-100 bg-white p-4 text-xs shadow-sm">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><h4 className="text-sm font-black text-slate-900">{item.name}</h4><p className="text-[10px] font-semibold text-slate-500">Última actividad: {item.lastActivityAt ? String(item.lastActivityAt).slice(0, 10) : '-'}</p></div><span className={`self-start rounded-full px-2 py-1 text-[9px] font-black ${item.status === 'ARCHIVED' ? 'bg-slate-100 text-slate-500' : 'bg-emerald-50 text-emerald-700'}`}>{item.status === 'ARCHIVED' ? 'Archivada' : 'Activa'}</span></div>
+                            <dl className="mt-3 grid grid-cols-2 gap-2"><div className="rounded-lg bg-slate-50 p-2"><dt className="text-[9px] font-black uppercase text-slate-400">Último agente</dt><dd className="font-bold text-slate-800">{item.lastEmployeeName || '-'}</dd></div><div className="rounded-lg bg-slate-50 p-2"><dt className="text-[9px] font-black uppercase text-slate-400">Partes cargados</dt><dd className="font-bold text-slate-800">{item.workLogsCount ?? itemLogs.length}</dd></div></dl>
+                            <p className="mt-3 text-[10px] text-slate-500"><b>Empleados:</b> {employeesForItem.length ? employeesForItem.slice(0, 5).join(', ') : '-'}</p>
+                            <div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => setSelectedSecondaryWorkItemId(selectedSecondaryWorkItemId === item.id ? null : item.id)} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] font-bold text-amber-800">{selectedSecondaryWorkItemId === item.id ? 'Ocultar partes' : 'Ver partes'}</button>{item.status !== 'ARCHIVED' && <button type="button" onClick={() => secondaryWorkItemsApi.update(item.id, { status: 'ARCHIVED' }).then(() => { triggerAlert('success', 'Carga secundaria archivada.'); onRefresh?.(); }).catch(() => triggerAlert('error', 'No se pudo archivar la carga secundaria.'))} className="rounded-lg border px-3 py-2 text-[10px] font-bold text-slate-600">Archivar</button>}</div>
+                          </article>;
+                        })}
+                      </div>}
+                      {selectedSecondaryWorkItem && <div className="mt-4 rounded-xl border bg-white p-4"><h4 className="font-black text-slate-900">Partes de {selectedSecondaryWorkItem.name}</h4><div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">{selectedSecondaryLogs.length ? selectedSecondaryLogs.map((log) => { const employee = employees.find((row) => row.id === log.employeeId); return <article key={log.id} className="rounded-lg bg-slate-50 p-3"><div className="flex flex-wrap justify-between gap-2"><b>{employee?.name || 'Empleado'}</b><span className="text-[10px] font-bold text-slate-400">{log.date} · {log.hours ?? 0} h</span></div><p className="mt-1 font-bold text-amber-700">{log.title}</p><p className="mt-1 whitespace-pre-wrap text-slate-600">{log.description}</p></article>; }) : <p className="text-xs text-slate-400">No hay partes asociados cargados en memoria. Usá Actualizar para refrescar.</p>}</div></div>}
+                    </section>
                     </>
                   )}
                 </div>

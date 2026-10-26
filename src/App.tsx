@@ -9,6 +9,7 @@ import { worklogsApi } from './api/worklogs.api';
 import { authApi } from './api/auth.api';
 import { announcementsApi } from './api/announcements.api';
 import { dependenciesApi } from './api/dependencies.api';
+import { secondaryWorkItemsApi } from './api/secondaryWorkItems.api';
 import AdminDashboard from './components/AdminDashboard';
 import EmployeeDashboard from './components/EmployeeDashboard';
 import LoginScreen from './components/LoginScreen';
@@ -18,7 +19,7 @@ import HelpPanel from './components/HelpPanel';
 import AnnouncementBanner from './components/AnnouncementBanner';
 import { APP_NAME, APP_UPDATED_AT, APP_VERSION } from './config/app';
 import { DEPENDENCIES, INITIAL_STRIKE_CONFIG, LAWS_ARTICLES_RULES } from './data/mockData';
-import { Announcement, CreateEmployeePayload, DailyAttendance, Dependency, Employee, LicenseArticle, LicenseRequest, LicenseRule, Project, ProjectUpdate, StrikeConfig, UpdateEmployeePayload, WorkLog } from './types';
+import { Announcement, CreateEmployeePayload, DailyAttendance, Dependency, Employee, LicenseArticle, LicenseRequest, LicenseRule, Project, ProjectUpdate, SecondaryWorkItem, StrikeConfig, UpdateEmployeePayload, WorkLog } from './types';
 
 function SessionAvatar({ src, name }: { src?: string; name: string }) {
   const [imageFailed, setImageFailed] = useState(false);
@@ -48,6 +49,7 @@ export default function App() {
   const [workLogs, setWorkLogs] = useState<WorkLog[]>([]);
   const [dailyAttendances, setDailyAttendances] = useState<DailyAttendance[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [secondaryWorkItems, setSecondaryWorkItems] = useState<SecondaryWorkItem[]>([]);
   const [licenseRequests, setLicenseRequests] = useState<LicenseRequest[]>([]);
   const [licenseRules, setLicenseRules] = useState<LicenseRule[]>(LAWS_ARTICLES_RULES);
   const [licenseArticles, setLicenseArticles] = useState<LicenseArticle[]>([]);
@@ -68,9 +70,10 @@ export default function App() {
     if (!options.silent) setIsRefreshing(true);
     try {
       const isAdmin = user.role === 'ADMIN';
-      const [employeeRows, projectRows, licenseRows, workLogRows, attendanceRows, rules, articleRows, strike, dependencyRows, announcementRows] = await Promise.all([
+      const [employeeRows, projectRows, secondaryRows, licenseRows, workLogRows, attendanceRows, rules, articleRows, strike, dependencyRows, announcementRows] = await Promise.all([
         isAdmin ? employeesApi.all() : employeesApi.me().then((me) => [me]),
         isAdmin ? projectsApi.all() : projectsApi.my(),
+        secondaryWorkItemsApi.all().catch(() => []),
         isAdmin ? licensesApi.all() : licensesApi.my(),
         isAdmin ? worklogsApi.all() : worklogsApi.my(),
         worklogsApi.attendance(),
@@ -82,6 +85,7 @@ export default function App() {
       ]);
       setEmployees(employeeRows);
       setProjects(projectRows);
+      setSecondaryWorkItems(secondaryRows);
       setLicenseRequests(licenseRows);
       setWorkLogs(workLogRows);
       setDailyAttendances(attendanceRows);
@@ -508,6 +512,7 @@ export default function App() {
             workLogs={workLogs}
             dailyAttendances={dailyAttendances}
             projects={projects}
+            secondaryWorkItems={secondaryWorkItems}
             licenseRequests={licenseRequests}
             licenseRules={licenseRules}
             licenseArticles={licenseArticles}
@@ -552,6 +557,7 @@ export default function App() {
             workLogs={workLogs}
             dailyAttendances={dailyAttendances}
             projects={projects}
+            secondaryWorkItems={secondaryWorkItems}
             licenseRequests={licenseRequests}
             licenseRules={licenseRules}
             strikeConfig={strikeConfig}

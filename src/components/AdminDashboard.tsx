@@ -14,6 +14,7 @@ import { Pagination, usePagination } from './Pagination';
 import DependencyAdmin from './DependencyAdmin';
 import AdminV2Panel from './AdminV2Panel';
 import AnnouncementAdmin from './AnnouncementAdmin';
+import { currentWorkdayStatus, requiresWorkLog } from '../utils/workday';
 
 interface AdminDashboardProps {
   employees: Employee[];
@@ -143,7 +144,7 @@ export default function AdminDashboard({
   const todayStr = getArgentinaTodayDateOnly();
   const nonAdminEmployees = employees.filter(e => !e.isAdmin);
   const agentsWithoutLog = nonAdminEmployees.filter(emp => {
-    return !workLogs.some(log => log.employeeId === emp.id && log.date === todayStr);
+    return requiresWorkLog(currentWorkdayStatus(emp.remoteDaysAssigned, strikeConfig.nextDate)) && !workLogs.some(log => log.employeeId === emp.id && log.date === todayStr);
   });
   const projectStats = React.useMemo(() => {
     const today = new Date();
@@ -1201,7 +1202,7 @@ export default function AdminDashboard({
 
       {/* Main Admin Contents */}
       <div className="grid grid-cols-1 gap-8">
-        {adminTab === 'v2' && <AdminV2Panel />}
+        {adminTab === 'v2' && <AdminV2Panel employees={employees} strikeDate={strikeConfig.nextDate} />}
         {adminTab === 'announcements' && <AnnouncementAdmin employees={employees} dependencies={dependencies} />}
         {/* TAB 1: EMPLEADOS - List and Detail split */}
         {adminTab === 'employees' && (

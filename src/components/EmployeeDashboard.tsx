@@ -3,6 +3,7 @@ import { statisticsApi } from '../api/statistics.api';
 import { DailyAttendance, Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, ActivityType, StatisticsResponse, SecondaryWorkItem } from '../types';
 import { activityTypeLabel, deploymentEnvironmentLabel, deploymentStatusLabel, difficultyLabel, licenseStatusLabel, projectStatusLabel } from '../utils/labels';
 import { getArgentinaTodayDateOnly } from '../utils/date';
+import { currentWorkdayStatus, getWorkdayStatus, requiresWorkLog } from '../utils/workday';
 import {
   Calendar, CheckCircle, FileText, User, Briefcase, Plus, Clock, 
   MapPin, ShieldAlert, Upload, Download, CheckCircle2, ChevronRight, AlertCircle, FileSpreadsheet,
@@ -467,6 +468,13 @@ export default function EmployeeDashboard({
 
   const todayStr = getArgentinaTodayDateOnly();
   const hasLogToday = workLogs.some(log => log.employeeId === employee.id && log.date === todayStr);
+  const todayWorkday = currentWorkdayStatus(employee.remoteDaysAssigned, strikeConfig.nextDate);
+  const workdayStatus = getWorkdayStatus(logDate, employee.remoteDaysAssigned, strikeConfig.nextDate);
+  useEffect(() => {
+    if (!editingWorkLogId && logDate >= todayStr && (workdayStatus === 'REMOTE' || workdayStatus === 'PRESENTIAL')) {
+      setLogMode(workdayStatus === 'REMOTE' ? 'remoto' : 'presencial');
+    }
+  }, [editingWorkLogId, logDate, todayStr, workdayStatus]);
   const wasReminded = remindedEmpIds.includes(employee.id);
 
   // Filter licenses by other articles (not Art. 14 / Guardia en Feria)
@@ -511,7 +519,7 @@ export default function EmployeeDashboard({
       )}
 
       {/* Alerta de Registro Diario Pendiente para el Agente */}
-      {!hasLogToday && (
+      {!hasLogToday && requiresWorkLog(todayWorkday) && (
         <div className={`p-5 mb-8 rounded-3xl border shadow-sm flex flex-col md:flex-row items-center justify-between gap-5 transition-all ${
           wasReminded 
             ? 'bg-rose-50 border-rose-200 animate-pulse text-rose-900 shadow-rose-100/50' 
@@ -669,6 +677,7 @@ export default function EmployeeDashboard({
                 <Plus className="w-5 h-5 text-indigo-600" /> {editingWorkLogId ? 'Editar parte diario' : 'Cargar actividad / trabajo diario'}
               </h3>
               <p className="mb-5 text-xs text-slate-500">Podés registrar varias actividades en el mismo día. Cada carga representa una tarea puntual.</p>
+              {workdayStatus === 'REMOTE' || workdayStatus === 'PRESENTIAL' ? <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800">Modalidad automática para {logDate}: <strong>{workdayStatus === 'REMOTE' ? 'Remoto' : 'Presencial'}</strong>.</div> : <div className="mb-4 rounded-xl border p-3 text-xs">{workdayStatus === 'STRIKE' ? 'Paro: jornada no laborable.' : 'Fin de semana: jornada no laborable.'}</div>}
               {hasLogToday && !editingWorkLogId && <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800">Ya cargaste al menos una actividad hoy. Podés registrar otra si hiciste más tareas.</div>}
               
               <form onSubmit={handleLogSubmit} className="space-y-4">

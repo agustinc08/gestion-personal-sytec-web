@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CircleHelp, LogOut, RefreshCw, User } from 'lucide-react';
+import { CircleHelp, LogOut, RefreshCw, User, Sun, Moon } from 'lucide-react';
 import { employeesApi } from './api/employees.api';
 import { licensesApi } from './api/licenses.api';
 import { licenseArticlesApi } from './api/licenseArticles.api';
@@ -45,6 +45,11 @@ function SessionAvatar({ src, name }: { src?: string; name: string }) {
 }
 
 export default function App() {
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => localStorage.getItem('gestion-sytec-theme') === 'dark' ? 'dark' : 'light');
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem('gestion-sytec-theme', theme);
+  }, [theme]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [workLogs, setWorkLogs] = useState<WorkLog[]>([]);
   const [dailyAttendances, setDailyAttendances] = useState<DailyAttendance[]>([]);
@@ -481,6 +486,7 @@ export default function App() {
             <GlobalSearch />
             <button type="button" onClick={() => setHelpOpen(true)} className="rounded-xl border border-slate-700 bg-slate-800 p-2.5" title="Ayuda"><CircleHelp className="h-4 w-4" /></button>
             <NotificationBell refreshKey={currentUser?.id} />
+            <button type="button" onClick={() => setTheme((value) => value === 'dark' ? 'light' : 'dark')} title={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'} aria-label={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'} className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2.5 text-xs font-bold text-white">{theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}<span>{theme === 'dark' ? 'Claro' : 'Oscuro'}</span></button>
             <button onClick={handleLogout} className="px-4 py-2 bg-slate-800 hover:bg-rose-700 hover:text-white text-slate-100 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-sm border border-slate-700">
               <LogOut className="w-4 h-4" /> Cerrar sesión
             </button>

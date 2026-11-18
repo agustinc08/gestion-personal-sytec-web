@@ -363,17 +363,27 @@ export default function AdminDashboard({
   useEffect(() => { selectedSecondaryWorkLogsPage.setFilter('secondaryWorkItemId', selectedSecondaryWorkItemId || ''); }, [selectedSecondaryWorkItemId]);
 
   React.useEffect(() => {
-    const refreshLists = () => {
-      employeeServerPage.refresh();
-      projectServerPage.refresh();
-      workLogServerPage.refresh();
-      attendanceServerPage.refresh();
-      licenseServerPage.refresh();
-      secondaryServerPage.refresh();
+    const refreshLists = (event: Event) => {
+      const scope = (event as CustomEvent<{ scope?: string }>).detail?.scope || 'all';
+      const all = scope === 'all';
+      if (all || scope === 'employees' || scope === 'licenses') employeeServerPage.refresh();
+      if (all || scope === 'projects' || scope === 'workLogs') projectServerPage.refresh();
+      if (all || scope === 'workLogs') {
+        workLogServerPage.refresh();
+        selectedEmployeeWorkLogsPage.refresh();
+        selectedProjectWorkLogsPage.refresh();
+        selectedSecondaryWorkLogsPage.refresh();
+      }
+      if (all || scope === 'attendance') attendanceServerPage.refresh();
+      if (all || scope === 'licenses') {
+        licenseServerPage.refresh();
+        selectedEmployeeLicensesPage.refresh();
+      }
+      if (all || scope === 'secondary' || scope === 'workLogs') secondaryServerPage.refresh();
     };
     window.addEventListener('sytec:refreshed', refreshLists);
     return () => window.removeEventListener('sytec:refreshed', refreshLists);
-  }, [employeeServerPage.refresh, projectServerPage.refresh, workLogServerPage.refresh, attendanceServerPage.refresh, licenseServerPage.refresh, secondaryServerPage.refresh]);
+  }, [employeeServerPage.refresh, projectServerPage.refresh, workLogServerPage.refresh, attendanceServerPage.refresh, licenseServerPage.refresh, secondaryServerPage.refresh, selectedEmployeeWorkLogsPage.refresh, selectedProjectWorkLogsPage.refresh, selectedEmployeeLicensesPage.refresh, selectedSecondaryWorkLogsPage.refresh]);
 
   React.useEffect(() => {
     if (currentAdmin) {

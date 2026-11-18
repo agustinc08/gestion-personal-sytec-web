@@ -70,7 +70,7 @@ export default function App() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const refreshInFlight = useRef(false);
 
-  const refreshData = useCallback(async (user = currentUser, options: { silent?: boolean; scope?: 'all' | 'employees' | 'projects' | 'secondary' | 'licenses' | 'dashboard' | 'attendance' | 'config' } = {}) => {
+  const refreshData = useCallback(async (user = currentUser, options: { silent?: boolean; scope?: 'all' | 'employees' | 'projects' | 'secondary' | 'licenses' | 'workLogs' | 'dashboard' | 'attendance' | 'config' } = {}) => {
     if (!user || refreshInFlight.current) return;
     refreshInFlight.current = true;
     if (!options.silent) setIsRefreshing(true);
@@ -80,11 +80,11 @@ export default function App() {
       const wants = (...domains: string[]) => scope === 'all' || domains.includes(scope);
       const today = new Date();
       const [employeeRows, projectRows, secondaryRows, licensePage, dashboard, attendanceRows, rules, articleRows, strike, dependencyRows, announcementRows] = await Promise.all([
-        wants('employees') ? (isAdmin ? employeesApi.options() : employeesApi.me().then((me) => [me])) : null,
-        wants('projects') ? projectsApi.options() : null,
+        (wants('employees') || (scope === 'licenses' && isAdmin)) ? (isAdmin ? employeesApi.options() : employeesApi.me().then((me) => [me])) : null,
+        wants('projects', 'workLogs') ? projectsApi.options() : null,
         wants('secondary') ? secondaryWorkItemsApi.options().catch(() => []) : null,
         wants('licenses') ? (isAdmin ? licensesApi.page({ page: 1, pageSize: 50, status: 'pendiente' }) : licensesApi.myPage({ page: 1, pageSize: 25 })) : null,
-        wants('dashboard', 'employees', 'projects', 'licenses') ? (isAdmin ? dashboardV2Api.summary() : dashboardV2Api.employeeSummary()) : null,
+        wants('dashboard', 'employees', 'projects', 'licenses', 'workLogs') ? (isAdmin ? dashboardV2Api.summary() : dashboardV2Api.employeeSummary()) : null,
         wants('attendance') && !isAdmin ? worklogsApi.attendance({ year: today.getFullYear(), month: today.getMonth() + 1 }) : null,
         scope === 'all' || scope === 'config' ? licensesApi.rules() : null,
         (scope === 'all' || scope === 'config') && isAdmin ? licenseArticlesApi.all(true).catch(() => []) : null,
@@ -110,7 +110,7 @@ export default function App() {
       if (strike) setStrikeConfig(strike);
       if (dependencyRows) setDependencies(dependencyRows);
       if (announcementRows) setAnnouncements(announcementRows);
-      window.dispatchEvent(new CustomEvent('sytec:refreshed'));
+      window.dispatchEvent(new CustomEvent('sytec:refreshed', { detail: { scope } }));
     } finally {
       refreshInFlight.current = false;
       if (!options.silent) setIsRefreshing(false);
@@ -217,7 +217,7 @@ export default function App() {
   const handleAddWorkLog = async (newLogData: Omit<WorkLog, 'id'>) => {
     const saved = await worklogsApi.create(cleanWorkLogTimePayload(newLogData));
     setWorkLogs((prev) => [saved, ...prev]);
-    void refreshData(undefined, { silent: true, scope: 'dashboard' });
+    void refreshData(undefined, { silent: true, scope: 'workLogs' });
     return saved;
   };
 
@@ -231,7 +231,7 @@ export default function App() {
   const handleUpdateWorkLog = async (id: string, payload: Partial<WorkLog>) => {
     const saved = await worklogsApi.update(id, cleanWorkLogTimePayload(payload));
     setWorkLogs((prev) => prev.map((log) => log.id === saved.id ? saved : log));
-    void refreshData(undefined, { silent: true, scope: 'dashboard' });
+    void refreshData(undefined, { silent: true, scope: 'workLogs' });
     return saved;
   };
 

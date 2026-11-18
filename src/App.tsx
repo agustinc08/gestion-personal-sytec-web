@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CircleHelp, LogOut, RefreshCw, User, Sun, Moon } from 'lucide-react';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { CircleHelp, KeyRound, LogOut, RefreshCw, User, Sun, Moon } from 'lucide-react';
 import { employeesApi } from './api/employees.api';
 import { licensesApi } from './api/licenses.api';
 import { licenseArticlesApi } from './api/licenseArticles.api';
@@ -10,8 +10,8 @@ import { authApi } from './api/auth.api';
 import { announcementsApi } from './api/announcements.api';
 import { dependenciesApi } from './api/dependencies.api';
 import { secondaryWorkItemsApi } from './api/secondaryWorkItems.api';
-import AdminDashboard from './components/AdminDashboard';
-import EmployeeDashboard from './components/EmployeeDashboard';
+const AdminDashboard = React.lazy(() => import('./components/AdminDashboard'));
+const EmployeeDashboard = React.lazy(() => import('./components/EmployeeDashboard'));
 import LoginScreen from './components/LoginScreen';
 import NotificationBell from './components/NotificationBell';
 import GlobalSearch from './components/GlobalSearch';
@@ -42,6 +42,31 @@ function SessionAvatar({ src, name }: { src?: string; name: string }) {
       onError={() => setImageFailed(true)}
     />
   );
+}
+
+function RequiredPasswordChange({ onChange, onLogout }: { onChange: (current: string, next: string) => Promise<void>; onLogout: () => void }) {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError('');
+    if (newPassword.length < 8) { setError('La nueva contraseña debe tener al menos 8 caracteres.'); return; }
+    setSaving(true);
+    try { await onChange(currentPassword, newPassword); }
+    catch (cause: any) { setError(cause?.response?.data?.message || 'No se pudo cambiar la contraseña. Verificá la contraseña actual e intentá nuevamente.'); }
+    finally { setSaving(false); }
+  };
+  return <main className="min-h-screen bg-slate-50 px-4 py-12 text-slate-900">
+    <form onSubmit={submit} className="mx-auto max-w-md space-y-5 rounded-xl border bg-white p-6 shadow-sm" aria-labelledby="required-password-title">
+      <div className="flex items-center gap-3"><KeyRound className="h-6 w-6 text-indigo-700" /><div><h1 id="required-password-title" className="text-lg font-bold">Actualizá tu contraseña</h1><p className="text-sm text-slate-600">Para continuar, reemplazá la contraseña temporal.</p></div></div>
+      <label className="block text-sm font-medium">Contraseña actual<input autoComplete="current-password" type="password" required value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} className="mt-1 w-full rounded-lg border p-3" /></label>
+      <label className="block text-sm font-medium">Nueva contraseña<input autoComplete="new-password" type="password" minLength={8} required value={newPassword} onChange={event => setNewPassword(event.target.value)} className="mt-1 w-full rounded-lg border p-3" /></label>
+      {error && <p role="alert" className="text-sm text-rose-700">{Array.isArray(error) ? error.join(' ') : error}</p>}
+      <div className="flex gap-3"><button disabled={saving} className="rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:opacity-60">{saving ? 'Guardando...' : 'Cambiar contraseña'}</button><button type="button" onClick={onLogout} className="rounded-lg border px-4 py-3 text-sm font-semibold">Cerrar sesión</button></div>
+    </form>
+  </main>;
 }
 
 export default function App() {
@@ -110,7 +135,7 @@ export default function App() {
       try {
         const user = await authApi.me();
         setCurrentUser(user);
-        await refreshData(user);
+        if (!user.mustChangePassword) await refreshData(user);
       } catch {
         authApi.logout();
       } finally {
@@ -160,7 +185,7 @@ export default function App() {
   const handleLogin = async (cuil: string, password: string) => {
     const session = await authApi.login(cuil, password);
     setCurrentUser(session.user);
-    await refreshData(session.user);
+    if (!session.user.mustChangePassword) await refreshData(session.user);
     return session.user;
   };
 
@@ -234,9 +259,18 @@ export default function App() {
   };
 
   const handleAddLicenseRequest = async (newReqData: Omit<LicenseRequest, 'id' | 'status' | 'dateRequested'>) => {
-    const saved = await licensesApi.create(newReqData);
+    const { certificateName: _ignoredCertificateName, ...payload } = newReqData;
+    const saved = await licensesApi.create(payload);
     setLicenseRequests((prev) => [saved, ...prev]);
     void refreshData(undefined, { silent: true });
+    return saved;
+  };
+
+  const handleUploadLicenseCertificate = async (id: string, file: File) => {
+    const saved = await licensesApi.uploadCertificate(id, file);
+    setLicenseRequests((prev) => prev.map((row) => row.id === saved.id ? saved : row));
+    void refreshData(undefined, { silent: true });
+    return saved;
   };
 
   const handleAddProject = async (newProjData: Omit<Project, 'id' | 'status'>) => {
@@ -446,6 +480,9 @@ export default function App() {
 
   const handleChangePassword = async (currentPassword: string, newPassword: string) => {
     await authApi.changePassword(currentPassword, newPassword);
+    const user = await authApi.me();
+    setCurrentUser(user);
+    if (!user.mustChangePassword) await refreshData(user);
   };
 
   if (!initialFetchDone) {
@@ -460,6 +497,10 @@ export default function App() {
         </div>
       </div>
     );
+  }
+
+  if (currentUser?.mustChangePassword) {
+    return <RequiredPasswordChange onChange={handleChangePassword} onLogout={handleLogout} />;
   }
 
   if (!currentUser || !currentEmployee) {
@@ -512,6 +553,7 @@ export default function App() {
 
       <main className="max-w-7xl mx-auto px-4 md:px-8 py-8 flex-1 w-full">
         <AnnouncementBanner items={announcements} onRefresh={() => announcementsApi.active().then(setAnnouncements)} />
+        <Suspense fallback={<div role="status" className="py-12 text-center text-sm text-slate-500">Cargando panel...</div>}>
         {currentRole === 'admin' ? (
           <AdminDashboard
             employees={processedEmployees}
@@ -573,6 +615,7 @@ export default function App() {
             onUpdateProject={handleUpdateProject}
             onAddProjectUpdate={handleAddProjectUpdate}
             onAddLicenseRequest={handleAddLicenseRequest}
+            onUploadLicenseCertificate={handleUploadLicenseCertificate}
             onDeleteLicenseRequest={handleDeleteLicenseRequest}
             onUpdateAvatar={handleUpdateAvatar}
             onUpdateEmployee={handleUpdateEmployee}
@@ -581,6 +624,7 @@ export default function App() {
             onRefresh={() => refreshData()}
           />
         )}
+        </Suspense>
       </main>
       <footer className="text-center text-xs text-gray-400 mt-12 py-6 border-t font-mono">
         <p>2026 Poder Judicial de la Nación - Secretaría de Informática - Oficina de Sistemas y Tecnología (SyTec).</p>

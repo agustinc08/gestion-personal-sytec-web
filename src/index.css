@@ -50,4 +50,9 @@ body { background: var(--bg-app); color: var(--text-primary); }
 :root[data-theme="dark"] body select { color-scheme: dark; background-color: var(--field-bg); color: var(--field-text); border-color: var(--border-default); }
 :root[data-theme="dark"] body input::placeholder,
 :root[data-theme="dark"] body textarea::placeholder { color: #94a3b8; }
+:root[data-theme="dark"] .employee-worklog-alert:not([data-reminded="true"]) { background-color: #422006 !important; border-color: #b45309 !important; color: #ffedd5; }
+:root[data-theme="dark"] .employee-worklog-alert[data-reminded="true"] { background-color: #4c0519 !important; border-color: #be123c !important; color: #ffe4e6; }
+:root[data-theme="dark"] .employee-worklog-alert p { color: #f8fafc !important; }
+:root[data-theme="dark"] .employee-license-summary { background: #1f2937 !important; border-color: #475569 !important; }
+:root[data-theme="dark"] .employee-license-summary .bg-white { background-color: #111827 !important; }
 :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }

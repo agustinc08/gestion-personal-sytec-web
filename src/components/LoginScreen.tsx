@@ -86,10 +86,11 @@ export default function LoginScreen({ onLogin, loadError, setLoadError }: LoginS
 
           <form onSubmit={executeLogin} className="space-y-5">
             <div>
-              <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+              <label htmlFor="login-cuil" className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                 <CreditCard className="w-3.5 h-3.5 text-slate-400" /> CUIL del Agente
               </label>
               <input
+                id="login-cuil"
                 type="text"
                 placeholder="Ej. 20-41111111-9"
                 value={cuil}
@@ -99,10 +100,11 @@ export default function LoginScreen({ onLogin, loadError, setLoadError }: LoginS
               />
             </div>
             <div>
-              <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5 mb-2">
+              <label htmlFor="login-password" className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5 mb-2">
                 <KeyRound className="w-3.5 h-3.5 text-slate-400" /> Contraseña
               </label>
               <input
+                id="login-password"
                 type="password"
                 placeholder="********"
                 value={password}

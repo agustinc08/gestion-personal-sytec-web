@@ -10,6 +10,7 @@ import {
   ArrowLeft, History, MessageSquare, Send, BarChart3, RefreshCw
 } from 'lucide-react';
 import ProjectComments from './ProjectComments';
+import CertificateDownload from './CertificateDownload';
 import { Pagination, usePagination } from './Pagination';
 
 interface EmployeeDashboardProps {
@@ -28,6 +29,7 @@ interface EmployeeDashboardProps {
   onUpdateProject?: (proj: Project) => void;
   onAddProjectUpdate?: (projectId: string, update: string | (Partial<ProjectUpdate> & { content: string })) => Promise<Project> | void;
   onAddLicenseRequest: (req: Omit<LicenseRequest, 'id' | 'status' | 'dateRequested'>) => any;
+  onUploadLicenseCertificate: (id: string, file: File) => Promise<LicenseRequest>;
   onDeleteLicenseRequest: (id: string) => Promise<void>;
   onUpdateAvatar: (employeeId: string, avatarUrl: string | File) => Promise<Employee> | void;
   onUpdateEmployee: (emp: Employee) => void;
@@ -52,6 +54,7 @@ export default function EmployeeDashboard({
   onUpdateProject,
   onAddProjectUpdate,
   onAddLicenseRequest,
+  onUploadLicenseCertificate,
   onDeleteLicenseRequest,
   onUpdateAvatar,
   onUpdateEmployee,
@@ -216,7 +219,9 @@ export default function EmployeeDashboard({
   const [licenseEnd, setLicenseEnd] = useState('');
   const [licenseReason, setLicenseReason] = useState('');
   const [dragOver, setDragOver] = useState(false);
-  const [attachedFile, setAttachedFile] = useState<File | { name: string; size: number } | null>(null);
+  const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  const [licensePendingUploadId, setLicensePendingUploadId] = useState<string | null>(null);
+  const [isSavingLicense, setIsSavingLicense] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Success messages alerts
@@ -310,12 +315,29 @@ export default function EmployeeDashboard({
   const editWorkLog = (log: WorkLog) => {
     setEditingWorkLogId(log.id); setLogTitle(log.title); setLogDescription(log.description); setLogMode(log.mode); setLogProjectId(log.projectId || ''); setWorkItemType(log.secondaryWorkItemId ? 'SECONDARY' : 'PROJECT'); setSecondaryWorkItemId(log.secondaryWorkItemId || ''); setSecondaryWorkItemName(log.secondaryWorkItemName || ''); setLogActivityType(log.activityType || 'PROJECT'); setLogHours(log.hours === undefined ? '' : String(log.hours)); setLogDate(log.date); setOverrideDate(true); workLogFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
+  const copyPreviousWorkLog = () => {
+    const previous = myWorkLogs.find((log) => log.date < todayStr);
+    if (!previous) return;
+    const projectIsAssigned = !!previous.projectId && myAssignedProjects.some((project) => project.id === previous.projectId);
+    setEditingWorkLogId(null);
+    setLogTitle(previous.title);
+    setLogDescription(previous.description);
+    setLogHours(previous.hours === undefined ? '' : String(previous.hours));
+    setLogActivityType(previous.activityType || 'PROJECT');
+    setWorkItemType(projectIsAssigned ? 'PROJECT' : previous.secondaryWorkItemId ? 'SECONDARY' : 'PROJECT');
+    setLogProjectId(projectIsAssigned ? previous.projectId || '' : '');
+    setSecondaryWorkItemId(previous.secondaryWorkItemId || '');
+    setSecondaryWorkItemName(previous.secondaryWorkItemName || '');
+    setOverrideDate(false);
+    setLogDate(todayStr);
+    setActiveTab('carga_diaria');
+    workLogFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
   const getDeadlineLabel = (project: Project) => {
     if (!project.deadline) return 'Sin fecha límite';
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const deadline = new Date(`${project.deadline}T00:00:00`);
-    const diff = Math.ceil((deadline.getTime() - today.getTime()) / 86400000);
+    const today = getArgentinaTodayDateOnly();
+    const deadline = project.deadline.slice(0, 10);
+    const diff = Math.round((Date.parse(`${deadline}T12:00:00Z`) - Date.parse(`${today}T12:00:00Z`)) / 86400000);
     if (diff < 0) return `Vencido hace ${Math.abs(diff)} días`;
     if (diff === 0) return 'Vence hoy';
     if (diff === 1) return 'Falta 1 dia';
@@ -358,19 +380,30 @@ export default function EmployeeDashboard({
     setDragOver(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
-      setAttachedFile({ name: file.name, size: file.size });
+      acceptLicenseFile(file);
     }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
-      setAttachedFile({ name: file.name, size: file.size });
+      acceptLicenseFile(file);
     }
   };
 
   const triggerFileSelect = () => {
     fileInputRef.current?.click();
+  };
+
+  const acceptLicenseFile = (file: File) => {
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    const allowed = ['pdf', 'jpg', 'jpeg', 'png'].includes(extension || '')
+      && ({ pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png' } as Record<string, string>)[extension || ''] === file.type;
+    if (!allowed || file.size > 5 * 1024 * 1024) {
+      triggerAlert('error', 'Adjuntá un PDF, JPG o PNG de hasta 5 MB.');
+      return;
+    }
+    setAttachedFile(file);
   };
 
   const triggerAlert = (type: 'success' | 'error', text: string) => {
@@ -432,8 +465,30 @@ export default function EmployeeDashboard({
     }
   };
 
-  const handleLicenseSubmit = (e: React.FormEvent) => {
+  const handleLicenseSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSavingLicense) return;
+    if (licensePendingUploadId) {
+      if (!attachedFile) {
+        triggerAlert('error', 'Seleccioná el certificado para reintentar la carga.');
+        return;
+      }
+      setIsSavingLicense(true);
+      try {
+        await onUploadLicenseCertificate(licensePendingUploadId, attachedFile);
+        setLicensePendingUploadId(null);
+        setAttachedFile(null);
+        setLicenseStart('');
+        setLicenseEnd('');
+        setLicenseReason('');
+        triggerAlert('success', 'Certificado adjuntado correctamente.');
+      } catch (error: any) {
+        triggerAlert('error', error?.response?.data?.message || 'La solicitud existe, pero no se pudo adjuntar el certificado. Podés reintentar.');
+      } finally {
+        setIsSavingLicense(false);
+      }
+      return;
+    }
     if (!licenseStart || !licenseEnd || !licenseReason.trim()) {
       triggerAlert('error', 'Por favor, completa las fechas y el motivo de la licencia.');
       return;
@@ -444,20 +499,38 @@ export default function EmployeeDashboard({
       return;
     }
 
-    onAddLicenseRequest({
-      employeeId: employee.id,
-      article: licenseArticle,
-      startDate: licenseStart,
-      endDate: licenseEnd,
-      reason: licenseReason,
-      certificateName: attachedFile ? attachedFile.name : undefined,
-    });
-
-    setLicenseStart('');
-    setLicenseEnd('');
-    setLicenseReason('');
-    setAttachedFile(null);
-    triggerAlert('success', 'Solicitud de licencia enviada a la Administración para aprobación.');
+    setIsSavingLicense(true);
+    try {
+      const created = await onAddLicenseRequest({
+        employeeId: employee.id,
+        article: licenseArticle,
+        startDate: licenseStart,
+        endDate: licenseEnd,
+        reason: licenseReason,
+      });
+      if (attachedFile) {
+        setLicensePendingUploadId(created.id);
+        try {
+          await onUploadLicenseCertificate(created.id, attachedFile);
+          setAttachedFile(null);
+          setLicenseStart('');
+          setLicenseEnd('');
+          setLicenseReason('');
+          triggerAlert('success', 'Solicitud y certificado enviados correctamente.');
+        } catch (error: any) {
+          triggerAlert('error', error?.response?.data?.message || 'La solicitud se guardó, pero no se pudo adjuntar el certificado. Reintentá la carga.');
+        }
+      } else {
+        setLicenseStart('');
+        setLicenseEnd('');
+        setLicenseReason('');
+        triggerAlert('success', 'Solicitud de licencia enviada a la Administración para aprobación.');
+      }
+    } catch (error: any) {
+      triggerAlert('error', error?.response?.data?.message || 'No se pudo guardar la solicitud. Revisá los datos e intentá de nuevo.');
+    } finally {
+      setIsSavingLicense(false);
+    }
   };
 
   const safeDayNumber = (value: unknown) => {
@@ -469,6 +542,10 @@ export default function EmployeeDashboard({
   const todayStr = getArgentinaTodayDateOnly();
   const hasLogToday = workLogs.some(log => log.employeeId === employee.id && log.date === todayStr);
   const todayWorkday = currentWorkdayStatus(employee.remoteDaysAssigned, strikeConfig.nextDate);
+  const approvedLeaveToday = myLicenseRequests.some((request) => request.status === 'aprobado' && request.article !== 'Guardia en Feria' && request.startDate.slice(0, 10) <= todayStr && request.endDate.slice(0, 10) >= todayStr);
+  const todayAttendance = attendanceByDate[todayStr];
+  const todayModeLabel = approvedLeaveToday ? 'Licencia aprobada' : todayWorkday === 'REMOTE' ? 'Remoto' : todayWorkday === 'PRESENTIAL' ? 'Presencial' : todayWorkday === 'STRIKE' ? 'Paro' : 'Fin de semana';
+  const nextProjectDeadline = myAssignedProjects.filter((project) => project.deadline && project.deadline.slice(0, 10) >= todayStr).sort((a, b) => a.deadline!.localeCompare(b.deadline!))[0];
   const workdayStatus = getWorkdayStatus(logDate, employee.remoteDaysAssigned, strikeConfig.nextDate);
   useEffect(() => {
     if (!editingWorkLogId && logDate >= todayStr && (workdayStatus === 'REMOTE' || workdayStatus === 'PRESENTIAL')) {
@@ -503,6 +580,27 @@ export default function EmployeeDashboard({
 
   return (
     <div className="w-full">
+      <section className="mb-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="employee-today-heading">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 id="employee-today-heading" className="text-base font-bold">Hoy</h2>
+            <p className="mt-1 text-sm text-slate-600">{new Date(`${todayStr}T12:00:00`).toLocaleDateString('es-AR', { weekday: 'long', day: '2-digit', month: '2-digit' })} · {todayModeLabel}{todayAttendance?.entryTime || todayAttendance?.exitTime ? ` · ${todayAttendance.entryTime || '--:--'}–${todayAttendance.exitTime || '--:--'}` : ''}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <span className={`rounded-full px-3 py-1.5 text-xs font-semibold ${hasLogToday ? 'bg-emerald-50 text-emerald-800' : approvedLeaveToday || !requiresWorkLog(todayWorkday) ? 'bg-slate-100 text-slate-700' : 'bg-amber-50 text-amber-900'}`}>
+              {hasLogToday ? 'Parte cargado' : approvedLeaveToday || !requiresWorkLog(todayWorkday) ? 'No requiere parte' : 'Parte pendiente'}
+            </span>
+            {nextProjectDeadline && <span className="rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-800">Próximo deadline: {new Date(`${nextProjectDeadline.deadline!.slice(0, 10)}T12:00:00`).toLocaleDateString('es-AR')}</span>}
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t pt-3 text-sm">
+          <span className="text-slate-700">Proyecto principal: <strong>{nextProjectDeadline?.name || myAssignedProjects[0]?.name || 'Sin proyecto asignado'}</strong></span>
+          <button type="button" onClick={() => { setActiveTab('carga_diaria'); if (!hasLogToday && !approvedLeaveToday && requiresWorkLog(todayWorkday)) { setLogDate(todayStr); setOverrideDate(false); workLogFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } else { setDailyView('list'); } }} className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white">
+            {hasLogToday ? 'Ver partes de hoy' : approvedLeaveToday || !requiresWorkLog(todayWorkday) ? 'Ver parte diario' : 'Cargar parte'}
+          </button>
+        </div>
+      </section>
+
       {/* Alert element */}
       {alertMsg && (
         <div className={`fixed top-4 right-4 z-50 flex items-center gap-3 p-4 rounded-xl border shadow-xl max-w-md animate-bounce ${
@@ -519,7 +617,7 @@ export default function EmployeeDashboard({
       )}
 
       {/* Alerta de Registro Diario Pendiente para el Agente */}
-      {!hasLogToday && requiresWorkLog(todayWorkday) && (
+      {!approvedLeaveToday && !hasLogToday && requiresWorkLog(todayWorkday) && (
         <div className={`p-5 mb-8 rounded-3xl border shadow-sm flex flex-col md:flex-row items-center justify-between gap-5 transition-all ${
           wasReminded 
             ? 'bg-rose-50 border-rose-200 animate-pulse text-rose-900 shadow-rose-100/50' 
@@ -677,6 +775,7 @@ export default function EmployeeDashboard({
                 <Plus className="w-5 h-5 text-indigo-600" /> {editingWorkLogId ? 'Editar parte diario' : 'Cargar actividad / trabajo diario'}
               </h3>
               <p className="mb-5 text-xs text-slate-500">Podés registrar varias actividades en el mismo día. Cada carga representa una tarea puntual.</p>
+              {!editingWorkLogId && myWorkLogs.some((log) => log.date < todayStr) && <button type="button" onClick={copyPreviousWorkLog} className="mb-4 rounded-lg border px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Copiar parte anterior</button>}
               {workdayStatus === 'REMOTE' || workdayStatus === 'PRESENTIAL' ? <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800">Modalidad automática para {logDate}: <strong>{workdayStatus === 'REMOTE' ? 'Remoto' : 'Presencial'}</strong>.</div> : <div className="mb-4 rounded-xl border p-3 text-xs">{workdayStatus === 'STRIKE' ? 'Paro: jornada no laborable.' : 'Fin de semana: jornada no laborable.'}</div>}
               {hasLogToday && !editingWorkLogId && <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800">Ya cargaste al menos una actividad hoy. Podés registrar otra si hiciste más tareas.</div>}
               
@@ -1686,7 +1785,7 @@ export default function EmployeeDashboard({
                       ref={fileInputRef}
                       onChange={handleFileChange}
                       className="hidden" 
-                      accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                      accept=".pdf,.png,.jpg,.jpeg"
                     />
                     
                     {attachedFile ? (
@@ -1694,7 +1793,7 @@ export default function EmployeeDashboard({
                         <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
                         <div className="text-left font-mono">
                           <p className="font-semibold truncate max-w-xs">{attachedFile.name}</p>
-                          <p className="text-[10px] text-emerald-600">Adjuntado con éxito. Haz clic para cambiarlo.</p>
+                          <p className="text-[10px] text-emerald-600">Listo para adjuntar. Hacé clic para cambiarlo.</p>
                         </div>
                       </div>
                     ) : (
@@ -1709,9 +1808,10 @@ export default function EmployeeDashboard({
 
                 <button
                   type="submit"
-                  className="w-full cursor-pointer bg-slate-900 hover:bg-black text-white font-semibold text-xs py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
+                  disabled={isSavingLicense}
+                  className="w-full cursor-pointer bg-slate-900 hover:bg-black text-white font-semibold text-xs py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 disabled:cursor-wait disabled:opacity-60"
                 >
-                  <FileText className="w-4 h-4" /> Enviar Solicitud
+                  <FileText className="w-4 h-4" /> {isSavingLicense ? 'Guardando...' : licensePendingUploadId ? 'Reintentar certificado' : 'Enviar Solicitud'}
                 </button>
               </form>
             </div>
@@ -1747,7 +1847,7 @@ export default function EmployeeDashboard({
                         
                         {req.certificateName && (
                           <span className="inline-flex items-center gap-1 mt-2 text-[10px] text-gray-500 bg-slate-100 px-1.5 py-0.5 rounded font-mono">
-                            <Upload className="w-3 h-3" /> Certificado: {req.certificateName}
+                            <Upload className="w-3 h-3" /> Certificado: <CertificateDownload licenseId={req.id} fileName={req.certificateName} />
                           </span>
                         )}
                       </div>

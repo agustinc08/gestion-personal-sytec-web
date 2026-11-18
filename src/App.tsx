@@ -1,5 +1,5 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CircleHelp, KeyRound, LogOut, RefreshCw, User, Sun, Moon } from 'lucide-react';
+import { CircleHelp, LogOut, RefreshCw, User, Sun, Moon } from 'lucide-react';
 import { employeesApi } from './api/employees.api';
 import { licensesApi } from './api/licenses.api';
 import { licenseArticlesApi } from './api/licenseArticles.api';
@@ -19,6 +19,8 @@ import HelpPanel from './components/HelpPanel';
 import AnnouncementBanner from './components/AnnouncementBanner';
 import { APP_NAME, APP_UPDATED_AT, APP_VERSION } from './config/app';
 import { Announcement, CreateEmployeePayload, DailyAttendance, Dependency, Employee, LicenseArticle, LicenseRequest, LicenseRule, Project, ProjectUpdate, SecondaryWorkItem, StrikeConfig, UpdateEmployeePayload, WorkLog } from './types';
+import RequiredPasswordChange from './components/RequiredPasswordChange';
+import { getInitialTheme, nextTheme, persistTheme } from './utils/theme';
 
 function SessionAvatar({ src, name }: { src?: string; name: string }) {
   const [imageFailed, setImageFailed] = useState(false);
@@ -43,37 +45,9 @@ function SessionAvatar({ src, name }: { src?: string; name: string }) {
   );
 }
 
-function RequiredPasswordChange({ onChange, onLogout }: { onChange: (current: string, next: string) => Promise<void>; onLogout: () => void }) {
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [error, setError] = useState('');
-  const [saving, setSaving] = useState(false);
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setError('');
-    if (newPassword.length < 8) { setError('La nueva contraseña debe tener al menos 8 caracteres.'); return; }
-    setSaving(true);
-    try { await onChange(currentPassword, newPassword); }
-    catch (cause: any) { setError(cause?.response?.data?.message || 'No se pudo cambiar la contraseña. Verificá la contraseña actual e intentá nuevamente.'); }
-    finally { setSaving(false); }
-  };
-  return <main className="min-h-screen bg-slate-50 px-4 py-12 text-slate-900">
-    <form onSubmit={submit} className="mx-auto max-w-md space-y-5 rounded-xl border bg-white p-6 shadow-sm" aria-labelledby="required-password-title">
-      <div className="flex items-center gap-3"><KeyRound className="h-6 w-6 text-indigo-700" /><div><h1 id="required-password-title" className="text-lg font-bold">Actualizá tu contraseña</h1><p className="text-sm text-slate-600">Para continuar, reemplazá la contraseña temporal.</p></div></div>
-      <label className="block text-sm font-medium">Contraseña actual<input autoComplete="current-password" type="password" required value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} className="mt-1 w-full rounded-lg border p-3" /></label>
-      <label className="block text-sm font-medium">Nueva contraseña<input autoComplete="new-password" type="password" minLength={8} required value={newPassword} onChange={event => setNewPassword(event.target.value)} className="mt-1 w-full rounded-lg border p-3" /></label>
-      {error && <p role="alert" className="text-sm text-rose-700">{Array.isArray(error) ? error.join(' ') : error}</p>}
-      <div className="flex gap-3"><button disabled={saving} className="rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:opacity-60">{saving ? 'Guardando...' : 'Cambiar contraseña'}</button><button type="button" onClick={onLogout} className="rounded-lg border px-4 py-3 text-sm font-semibold">Cerrar sesión</button></div>
-    </form>
-  </main>;
-}
-
 export default function App() {
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => localStorage.getItem('gestion-sytec-theme') === 'dark' ? 'dark' : 'light');
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    localStorage.setItem('gestion-sytec-theme', theme);
-  }, [theme]);
+  const [theme, setTheme] = useState<'light' | 'dark'>(getInitialTheme);
+  useEffect(() => persistTheme(theme), [theme]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [workLogs, setWorkLogs] = useState<WorkLog[]>([]);
   const [dailyAttendances, setDailyAttendances] = useState<DailyAttendance[]>([]);
@@ -526,7 +500,7 @@ export default function App() {
             <GlobalSearch />
             <button type="button" onClick={() => setHelpOpen(true)} className="rounded-xl border border-slate-700 bg-slate-800 p-2.5" title="Ayuda"><CircleHelp className="h-4 w-4" /></button>
             <NotificationBell refreshKey={currentUser?.id} />
-            <button type="button" onClick={() => setTheme((value) => value === 'dark' ? 'light' : 'dark')} title={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'} aria-label={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'} className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2.5 text-xs font-bold text-white">{theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}<span>{theme === 'dark' ? 'Claro' : 'Oscuro'}</span></button>
+            <button type="button" onClick={() => setTheme((value) => nextTheme(value))} title={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'} aria-label={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'} className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2.5 text-xs font-bold text-white">{theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}<span>{theme === 'dark' ? 'Claro' : 'Oscuro'}</span></button>
             <button onClick={handleLogout} className="px-4 py-2 bg-slate-800 hover:bg-rose-700 hover:text-white text-slate-100 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-sm border border-slate-700">
               <LogOut className="w-4 h-4" /> Cerrar sesión
             </button>

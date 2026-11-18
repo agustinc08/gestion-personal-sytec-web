@@ -299,7 +299,19 @@ export default function EmployeeDashboard({
     calendarLicensePage.setFilter('to', `${dailyYear}-${dailyMonth.padStart(2, '0')}-31`);
   }, [dailyYear, dailyMonth, calendarLicensePage.setFilter]);
   useEffect(() => {
-    const refreshPages = () => { dailyServerPage.refresh(); projectServerPage.refresh(); licenseServerPage.refresh(); calendarLicensePage.refresh(); selectedProjectWorkLogsPage.refresh(); };
+    const refreshPages = (event: Event) => {
+      const scope = (event as CustomEvent<{ scope?: string }>).detail?.scope || 'all';
+      const all = scope === 'all';
+      if (all || scope === 'workLogs') {
+        dailyServerPage.refresh();
+        selectedProjectWorkLogsPage.refresh();
+      }
+      if (all || scope === 'projects' || scope === 'workLogs') projectServerPage.refresh();
+      if (all || scope === 'licenses') {
+        licenseServerPage.refresh();
+        calendarLicensePage.refresh();
+      }
+    };
     window.addEventListener('sytec:refreshed', refreshPages);
     return () => window.removeEventListener('sytec:refreshed', refreshPages);
   }, [dailyServerPage.refresh, projectServerPage.refresh, licenseServerPage.refresh, calendarLicensePage.refresh, selectedProjectWorkLogsPage.refresh]);

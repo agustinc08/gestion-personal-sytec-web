@@ -53,7 +53,16 @@ function ExecutiveSummary({ employees, strikeDate }: { employees: Employee[]; st
       .catch(() => setError('No se pudo cargar el resumen ejecutivo.'))
       .finally(() => { if (!silent) setRefreshing(false); });
   };
-  useEffect(() => { load(); const onRefresh = () => load(true); window.addEventListener('sytec:refreshed', onRefresh); const intervalId = window.setInterval(() => load(true), 60000); return () => { window.removeEventListener('sytec:refreshed', onRefresh); window.clearInterval(intervalId); }; }, [calendarYear, calendarMonth]);
+  useEffect(() => {
+    load();
+    const onRefresh = (event: Event) => {
+      const scope = (event as CustomEvent<{ scope?: string }>).detail?.scope || 'all';
+      if (['all', 'dashboard', 'employees', 'projects', 'licenses', 'workLogs', 'attendance'].includes(scope)) load(true);
+    };
+    window.addEventListener('sytec:refreshed', onRefresh);
+    const intervalId = window.setInterval(() => load(true), 60000);
+    return () => { window.removeEventListener('sytec:refreshed', onRefresh); window.clearInterval(intervalId); };
+  }, [calendarYear, calendarMonth]);
   useEffect(() => { if (!refreshMessage) return; const timeoutId = window.setTimeout(() => setRefreshMessage(''), 2500); return () => window.clearTimeout(timeoutId); }, [refreshMessage]);
   const changeMonth = (delta: number) => {
     const next = new Date(Date.UTC(calendarYear, calendarMonth - 1 + delta, 1, 12));

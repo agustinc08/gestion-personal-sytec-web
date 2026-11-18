@@ -1,5 +1,6 @@
 import { CreateEmployeePayload, Employee, UpdateEmployeePayload } from '../types';
 import { api, resolveApiFileUrl } from './client';
+import { normalizePage, PageResult } from './pagination';
 
 const normalizeEmployee = (employee: Employee) => ({
   ...employee,
@@ -8,6 +9,11 @@ const normalizeEmployee = (employee: Employee) => ({
 
 export const employeesApi = {
   all: async () => (await api.get<Employee[]>('/employees')).data.map(normalizeEmployee),
+  options: async () => (await api.get<Employee[]>('/employees/options')).data.map(normalizeEmployee),
+  page: async (params: Record<string, unknown>, signal?: AbortSignal) => {
+    const response = normalizePage((await api.get<PageResult<Employee> | Employee[]>('/employees', { params, signal })).data);
+    return { ...response, items: response.items.map(normalizeEmployee) };
+  },
   me: async () => normalizeEmployee((await api.get<Employee>('/employees/me')).data),
   create: async (payload: CreateEmployeePayload) => normalizeEmployee((await api.post<Employee>('/employees', payload)).data),
   update: async (id: string, payload: UpdateEmployeePayload) => normalizeEmployee((await api.patch<Employee>(`/employees/${id}`, payload)).data),

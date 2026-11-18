@@ -1,16 +1,23 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { statisticsApi } from '../api/statistics.api';
+import { worklogsApi } from '../api/worklogs.api';
+import { projectsApi } from '../api/projects.api';
+import { licensesApi } from '../api/licenses.api';
 import { DailyAttendance, Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, ActivityType, StatisticsResponse, SecondaryWorkItem } from '../types';
 import { activityTypeLabel, deploymentEnvironmentLabel, deploymentStatusLabel, difficultyLabel, licenseStatusLabel, projectStatusLabel } from '../utils/labels';
 import { getArgentinaTodayDateOnly } from '../utils/date';
 import { currentWorkdayStatus, getWorkdayStatus, requiresWorkLog } from '../utils/workday';
+import { copyWorkLogDraft, employeeDaySummary } from '../utils/employee-day';
+import { createLicenseRequestWithOptionalCertificate } from '../utils/license-submit';
 import {
   Calendar, CheckCircle, FileText, User, Briefcase, Plus, Clock, 
   MapPin, ShieldAlert, Upload, Download, CheckCircle2, ChevronRight, AlertCircle, FileSpreadsheet,
   ArrowLeft, History, MessageSquare, Send, BarChart3, RefreshCw
 } from 'lucide-react';
 import ProjectComments from './ProjectComments';
-import { Pagination, usePagination } from './Pagination';
+import CertificateDownload from './CertificateDownload';
+import { ServerPagination } from './ServerPagination';
+import { useServerPagination } from '../hooks/useServerPagination';
 
 interface EmployeeDashboardProps {
   employee: Employee;
@@ -20,6 +27,7 @@ interface EmployeeDashboardProps {
   projects: Project[];
   secondaryWorkItems: SecondaryWorkItem[];
   licenseRequests: LicenseRequest[];
+  summary: any;
   licenseRules: LicenseRule[];
   strikeConfig: StrikeConfig;
   onAddWorkLog: (log: Omit<WorkLog, 'id'>) => Promise<WorkLog> | WorkLog;
@@ -28,6 +36,7 @@ interface EmployeeDashboardProps {
   onUpdateProject?: (proj: Project) => void;
   onAddProjectUpdate?: (projectId: string, update: string | (Partial<ProjectUpdate> & { content: string })) => Promise<Project> | void;
   onAddLicenseRequest: (req: Omit<LicenseRequest, 'id' | 'status' | 'dateRequested'>) => any;
+  onUploadLicenseCertificate: (id: string, file: File) => Promise<LicenseRequest>;
   onDeleteLicenseRequest: (id: string) => Promise<void>;
   onUpdateAvatar: (employeeId: string, avatarUrl: string | File) => Promise<Employee> | void;
   onUpdateEmployee: (emp: Employee) => void;
@@ -44,6 +53,7 @@ export default function EmployeeDashboard({
   projects,
   secondaryWorkItems,
   licenseRequests,
+  summary,
   licenseRules,
   strikeConfig,
   onAddWorkLog,
@@ -52,6 +62,7 @@ export default function EmployeeDashboard({
   onUpdateProject,
   onAddProjectUpdate,
   onAddLicenseRequest,
+  onUploadLicenseCertificate,
   onDeleteLicenseRequest,
   onUpdateAvatar,
   onUpdateEmployee,
@@ -216,13 +227,15 @@ export default function EmployeeDashboard({
   const [licenseEnd, setLicenseEnd] = useState('');
   const [licenseReason, setLicenseReason] = useState('');
   const [dragOver, setDragOver] = useState(false);
-  const [attachedFile, setAttachedFile] = useState<File | { name: string; size: number } | null>(null);
+  const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  const [licensePendingUploadId, setLicensePendingUploadId] = useState<string | null>(null);
+  const [isSavingLicense, setIsSavingLicense] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Success messages alerts
   const [alertMsg, setAlertMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const myWorkLogs = workLogs.filter(log => log.employeeId === employee.id).sort((a,b) => b.date.localeCompare(a.date));
+  const myWorkLogs = workLogs;
   const myLicenseRequests = licenseRequests.filter(req => req.employeeId === employee.id).sort((a,b) => b.dateRequested.localeCompare(a.dateRequested));
 
   // Determine projects I'm assigned or those matched by titles
@@ -271,16 +284,38 @@ export default function EmployeeDashboard({
       setIsSavingAttendance(false);
     }
   };
-  const dailyFilteredLogs = myWorkLogs.filter((log) => (
-    (log.date || '').slice(0, 4) === dailyYear &&
-    String(Number((log.date || '').slice(5, 7))) === dailyMonth &&
-    (dailyModeFilter === 'todos' || log.mode === dailyModeFilter) &&
-    (dailyActivityFilter === 'todos' || log.activityType === dailyActivityFilter) &&
-    (dailyProjectFilter === 'todos' || log.projectId === dailyProjectFilter)
-  ));
-  const dailyPagination = usePagination(dailyFilteredLogs, [dailyYear, dailyMonth, dailyModeFilter, dailyActivityFilter, dailyProjectFilter]);
-  const projectPagination = usePagination(myAssignedProjects);
-  const licensePagination = usePagination(myLicenseRequests);
+  const dailyServerPage = useServerPagination(worklogsApi.myPage, { year: dailyYear, month: dailyMonth, employeeId: employee.id, mode: '', activityType: '', projectId: '' }, 100);
+  const projectServerPage = useServerPagination(projectsApi.myPage, {});
+  const licenseServerPage = useServerPagination(licensesApi.myPage, {});
+  const calendarLicensePage = useServerPagination(licensesApi.myPage, { from: `${dailyYear}-${dailyMonth.padStart(2, '0')}-01`, to: `${dailyYear}-${dailyMonth.padStart(2, '0')}-31`, status: 'aprobado' }, 100);
+  const selectedProjectWorkLogsPage = useServerPagination(
+    (filters, signal) => filters.projectId ? worklogsApi.myPage(filters, signal) : Promise.resolve({ items: [], page: 1, pageSize: 10, total: 0, totalPages: 1 }),
+    { projectId: '' },
+    10,
+  );
+  useEffect(() => { selectedProjectWorkLogsPage.setFilter('projectId', selectedProjectId || ''); }, [selectedProjectId, selectedProjectWorkLogsPage.setFilter]);
+  useEffect(() => {
+    calendarLicensePage.setFilter('from', `${dailyYear}-${dailyMonth.padStart(2, '0')}-01`);
+    calendarLicensePage.setFilter('to', `${dailyYear}-${dailyMonth.padStart(2, '0')}-31`);
+  }, [dailyYear, dailyMonth, calendarLicensePage.setFilter]);
+  useEffect(() => {
+    const refreshPages = (event: Event) => {
+      const scope = (event as CustomEvent<{ scope?: string }>).detail?.scope || 'all';
+      const all = scope === 'all';
+      if (all || scope === 'workLogs') {
+        dailyServerPage.refresh();
+        selectedProjectWorkLogsPage.refresh();
+      }
+      if (all || scope === 'projects' || scope === 'workLogs') projectServerPage.refresh();
+      if (all || scope === 'licenses') {
+        licenseServerPage.refresh();
+        calendarLicensePage.refresh();
+      }
+    };
+    window.addEventListener('sytec:refreshed', refreshPages);
+    return () => window.removeEventListener('sytec:refreshed', refreshPages);
+  }, [dailyServerPage.refresh, projectServerPage.refresh, licenseServerPage.refresh, calendarLicensePage.refresh, selectedProjectWorkLogsPage.refresh]);
+  const dailyFilteredLogs = dailyServerPage.items;
   const selectedDayLogs = dailyFilteredLogs.filter((log) => log.date === selectedCalendarDate);
   const calendarYear = Number(dailyYear) || new Date().getFullYear();
   const calendarMonthIndex = (Number(dailyMonth) || new Date().getMonth() + 1) - 1;
@@ -310,12 +345,29 @@ export default function EmployeeDashboard({
   const editWorkLog = (log: WorkLog) => {
     setEditingWorkLogId(log.id); setLogTitle(log.title); setLogDescription(log.description); setLogMode(log.mode); setLogProjectId(log.projectId || ''); setWorkItemType(log.secondaryWorkItemId ? 'SECONDARY' : 'PROJECT'); setSecondaryWorkItemId(log.secondaryWorkItemId || ''); setSecondaryWorkItemName(log.secondaryWorkItemName || ''); setLogActivityType(log.activityType || 'PROJECT'); setLogHours(log.hours === undefined ? '' : String(log.hours)); setLogDate(log.date); setOverrideDate(true); workLogFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
+  const copyPreviousWorkLog = () => {
+    const previous = myWorkLogs.find((log) => log.date < todayStr);
+    if (!previous) return;
+    const draft = copyWorkLogDraft(previous, myAssignedProjects.map((project) => project.id));
+    setEditingWorkLogId(null);
+    setLogTitle(draft.title);
+    setLogDescription(draft.description);
+    setLogHours(draft.hours);
+    setLogActivityType(draft.activityType);
+    setWorkItemType(draft.workItemType);
+    setLogProjectId(draft.projectId);
+    setSecondaryWorkItemId(draft.secondaryWorkItemId);
+    setSecondaryWorkItemName(draft.secondaryWorkItemName);
+    setOverrideDate(false);
+    setLogDate(todayStr);
+    setActiveTab('carga_diaria');
+    workLogFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
   const getDeadlineLabel = (project: Project) => {
     if (!project.deadline) return 'Sin fecha límite';
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const deadline = new Date(`${project.deadline}T00:00:00`);
-    const diff = Math.ceil((deadline.getTime() - today.getTime()) / 86400000);
+    const today = getArgentinaTodayDateOnly();
+    const deadline = project.deadline.slice(0, 10);
+    const diff = Math.round((Date.parse(`${deadline}T12:00:00Z`) - Date.parse(`${today}T12:00:00Z`)) / 86400000);
     if (diff < 0) return `Vencido hace ${Math.abs(diff)} días`;
     if (diff === 0) return 'Vence hoy';
     if (diff === 1) return 'Falta 1 dia';
@@ -358,19 +410,30 @@ export default function EmployeeDashboard({
     setDragOver(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
-      setAttachedFile({ name: file.name, size: file.size });
+      acceptLicenseFile(file);
     }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
-      setAttachedFile({ name: file.name, size: file.size });
+      acceptLicenseFile(file);
     }
   };
 
   const triggerFileSelect = () => {
     fileInputRef.current?.click();
+  };
+
+  const acceptLicenseFile = (file: File) => {
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    const allowed = ['pdf', 'jpg', 'jpeg', 'png'].includes(extension || '')
+      && ({ pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png' } as Record<string, string>)[extension || ''] === file.type;
+    if (!allowed || file.size > 5 * 1024 * 1024) {
+      triggerAlert('error', 'Adjuntá un PDF, JPG o PNG de hasta 5 MB.');
+      return;
+    }
+    setAttachedFile(file);
   };
 
   const triggerAlert = (type: 'success' | 'error', text: string) => {
@@ -432,8 +495,30 @@ export default function EmployeeDashboard({
     }
   };
 
-  const handleLicenseSubmit = (e: React.FormEvent) => {
+  const handleLicenseSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSavingLicense) return;
+    if (licensePendingUploadId) {
+      if (!attachedFile) {
+        triggerAlert('error', 'Seleccioná el certificado para reintentar la carga.');
+        return;
+      }
+      setIsSavingLicense(true);
+      try {
+        await onUploadLicenseCertificate(licensePendingUploadId, attachedFile);
+        setLicensePendingUploadId(null);
+        setAttachedFile(null);
+        setLicenseStart('');
+        setLicenseEnd('');
+        setLicenseReason('');
+        triggerAlert('success', 'Certificado adjuntado correctamente.');
+      } catch (error: any) {
+        triggerAlert('error', error?.response?.data?.message || 'La solicitud existe, pero no se pudo adjuntar el certificado. Podés reintentar.');
+      } finally {
+        setIsSavingLicense(false);
+      }
+      return;
+    }
     if (!licenseStart || !licenseEnd || !licenseReason.trim()) {
       triggerAlert('error', 'Por favor, completa las fechas y el motivo de la licencia.');
       return;
@@ -444,20 +529,33 @@ export default function EmployeeDashboard({
       return;
     }
 
-    onAddLicenseRequest({
-      employeeId: employee.id,
-      article: licenseArticle,
-      startDate: licenseStart,
-      endDate: licenseEnd,
-      reason: licenseReason,
-      certificateName: attachedFile ? attachedFile.name : undefined,
-    });
-
-    setLicenseStart('');
-    setLicenseEnd('');
-    setLicenseReason('');
-    setAttachedFile(null);
-    triggerAlert('success', 'Solicitud de licencia enviada a la Administración para aprobación.');
+    setIsSavingLicense(true);
+    let requestCreated = false;
+    try {
+      await createLicenseRequestWithOptionalCertificate(
+        async () => {
+          const created = await onAddLicenseRequest({ employeeId: employee.id, article: licenseArticle, startDate: licenseStart, endDate: licenseEnd, reason: licenseReason });
+          requestCreated = true;
+          return created;
+        },
+        async (created: LicenseRequest) => {
+          setLicensePendingUploadId(created.id);
+          await onUploadLicenseCertificate(created.id, attachedFile!);
+        },
+        Boolean(attachedFile),
+      );
+      setLicensePendingUploadId(null);
+      setAttachedFile(null);
+      setLicenseStart('');
+      setLicenseEnd('');
+      setLicenseReason('');
+      triggerAlert('success', attachedFile ? 'Solicitud y certificado enviados correctamente.' : 'Solicitud de licencia enviada a la Administración para aprobación.');
+    } catch (error: any) {
+      const fallback = requestCreated ? 'La solicitud se guardó, pero no se pudo adjuntar el certificado. Reintentá la carga.' : 'No se pudo guardar la solicitud. Revisá los datos e intentá de nuevo.';
+      triggerAlert('error', error?.response?.data?.message || fallback);
+    } finally {
+      setIsSavingLicense(false);
+    }
   };
 
   const safeDayNumber = (value: unknown) => {
@@ -467,8 +565,13 @@ export default function EmployeeDashboard({
   const remainingDaysToTake = safeDayNumber(safeDayNumber(employee.totalLicenseDays) - safeDayNumber(employee.licenseDaysTaken));
 
   const todayStr = getArgentinaTodayDateOnly();
-  const hasLogToday = workLogs.some(log => log.employeeId === employee.id && log.date === todayStr);
+  const hasLogToday = Boolean(summary?.workLogToday);
   const todayWorkday = currentWorkdayStatus(employee.remoteDaysAssigned, strikeConfig.nextDate);
+  const approvedLeaveToday = Boolean(summary?.approvedLeaveToday);
+  const todaySummary = employeeDaySummary(todayWorkday, approvedLeaveToday, hasLogToday);
+  const todayAttendance = attendanceByDate[todayStr];
+  const todayModeLabel = todaySummary.label;
+  const nextProjectDeadline = myAssignedProjects.filter((project) => project.deadline && project.deadline.slice(0, 10) >= todayStr).sort((a, b) => a.deadline!.localeCompare(b.deadline!))[0];
   const workdayStatus = getWorkdayStatus(logDate, employee.remoteDaysAssigned, strikeConfig.nextDate);
   useEffect(() => {
     if (!editingWorkLogId && logDate >= todayStr && (workdayStatus === 'REMOTE' || workdayStatus === 'PRESENTIAL')) {
@@ -503,6 +606,27 @@ export default function EmployeeDashboard({
 
   return (
     <div className="w-full">
+      <section className="mb-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="employee-today-heading">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 id="employee-today-heading" className="text-base font-bold">Hoy</h2>
+            <p className="mt-1 text-sm text-slate-600">{new Date(`${todayStr}T12:00:00`).toLocaleDateString('es-AR', { weekday: 'long', day: '2-digit', month: '2-digit' })} · {todayModeLabel}{todayAttendance?.entryTime || todayAttendance?.exitTime ? ` · ${todayAttendance.entryTime || '--:--'}–${todayAttendance.exitTime || '--:--'}` : ''}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <span className={`rounded-full px-3 py-1.5 text-xs font-semibold ${hasLogToday ? 'bg-emerald-50 text-emerald-800' : approvedLeaveToday || !requiresWorkLog(todayWorkday) ? 'bg-slate-100 text-slate-700' : 'bg-amber-50 text-amber-900'}`}>
+              {todaySummary.workLogLabel}
+            </span>
+            {nextProjectDeadline && <span className="rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-800">Próximo deadline: {new Date(`${nextProjectDeadline.deadline!.slice(0, 10)}T12:00:00`).toLocaleDateString('es-AR')}</span>}
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t pt-3 text-sm">
+          <span className="text-slate-700">Proyecto principal: <strong>{nextProjectDeadline?.name || myAssignedProjects[0]?.name || 'Sin proyecto asignado'}</strong></span>
+          <button type="button" onClick={() => { setActiveTab('carga_diaria'); if (!hasLogToday && !approvedLeaveToday && requiresWorkLog(todayWorkday)) { setLogDate(todayStr); setOverrideDate(false); workLogFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } else { setDailyView('list'); } }} className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white">
+            {hasLogToday ? 'Ver partes de hoy' : approvedLeaveToday || !requiresWorkLog(todayWorkday) ? 'Ver parte diario' : 'Cargar parte'}
+          </button>
+        </div>
+      </section>
+
       {/* Alert element */}
       {alertMsg && (
         <div className={`fixed top-4 right-4 z-50 flex items-center gap-3 p-4 rounded-xl border shadow-xl max-w-md animate-bounce ${
@@ -519,8 +643,8 @@ export default function EmployeeDashboard({
       )}
 
       {/* Alerta de Registro Diario Pendiente para el Agente */}
-      {!hasLogToday && requiresWorkLog(todayWorkday) && (
-        <div className={`p-5 mb-8 rounded-3xl border shadow-sm flex flex-col md:flex-row items-center justify-between gap-5 transition-all ${
+      {!approvedLeaveToday && !hasLogToday && requiresWorkLog(todayWorkday) && (
+        <div data-reminded={wasReminded} className={`employee-worklog-alert p-5 mb-8 rounded-3xl border shadow-sm flex flex-col md:flex-row items-center justify-between gap-5 transition-all ${
           wasReminded 
             ? 'bg-rose-50 border-rose-200 animate-pulse text-rose-900 shadow-rose-100/50' 
             : 'bg-amber-50 border-amber-200 text-amber-900 shadow-amber-100/50'
@@ -596,7 +720,7 @@ export default function EmployeeDashboard({
           }`}
         >
           <Calendar className="w-4 h-4" />
-          Parte Diario ({myWorkLogs.length})
+          Parte Diario ({summary?.workLogs ?? myWorkLogs.length})
         </button>
         <button
           onClick={() => setActiveTab('proyectos')}
@@ -629,7 +753,7 @@ export default function EmployeeDashboard({
           }`}
         >
           <FileText className="w-4 h-4" />
-          Solicitar Licencia ({myLicenseRequests.length})
+          Solicitar Licencia ({summary?.licenses ?? myLicenseRequests.length})
         </button>
         <button
           onClick={() => setActiveTab('perfil')}
@@ -677,6 +801,7 @@ export default function EmployeeDashboard({
                 <Plus className="w-5 h-5 text-indigo-600" /> {editingWorkLogId ? 'Editar parte diario' : 'Cargar actividad / trabajo diario'}
               </h3>
               <p className="mb-5 text-xs text-slate-500">Podés registrar varias actividades en el mismo día. Cada carga representa una tarea puntual.</p>
+              {!editingWorkLogId && myWorkLogs.some((log) => log.date < todayStr) && <button type="button" onClick={copyPreviousWorkLog} className="mb-4 rounded-lg border px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Copiar parte anterior</button>}
               {workdayStatus === 'REMOTE' || workdayStatus === 'PRESENTIAL' ? <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800">Modalidad automática para {logDate}: <strong>{workdayStatus === 'REMOTE' ? 'Remoto' : 'Presencial'}</strong>.</div> : <div className="mb-4 rounded-xl border p-3 text-xs">{workdayStatus === 'STRIKE' ? 'Paro: jornada no laborable.' : 'Fin de semana: jornada no laborable.'}</div>}
               {hasLogToday && !editingWorkLogId && <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800">Ya cargaste al menos una actividad hoy. Podés registrar otra si hiciste más tareas.</div>}
               
@@ -906,35 +1031,35 @@ export default function EmployeeDashboard({
                   <input
                     type="number"
                     value={dailyYear}
-                    onChange={(e) => setDailyYear(e.target.value)}
+                    onChange={(e) => { setDailyYear(e.target.value); dailyServerPage.setFilter('year', e.target.value); }}
                     className="text-xs border border-slate-200 rounded-xl px-3 py-2"
                     placeholder="Año"
                   />
-                  <select value={dailyMonth} onChange={(e) => setDailyMonth(e.target.value)} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
+                  <select value={dailyMonth} onChange={(e) => { setDailyMonth(e.target.value); dailyServerPage.setFilter('month', e.target.value); }} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
                     {Array.from({ length: 12 }, (_, idx) => <option key={idx + 1} value={idx + 1}>{new Date(2026, idx, 1).toLocaleDateString('es-AR', { month: 'long' })}</option>)}
                   </select>
-                  <select value={dailyModeFilter} onChange={(e) => setDailyModeFilter(e.target.value)} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
+                  <select value={dailyModeFilter} onChange={(e) => { const value = e.target.value; setDailyModeFilter(value); dailyServerPage.setFilter('mode', value === 'todos' ? '' : value); }} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
                     <option value="todos">Modalidad</option>
                     <option value="presencial">Presencial</option>
                     <option value="remoto">Remoto</option>
                     <option value="mixto">Mixto</option>
                     <option value="licencia">Licencia</option>
                   </select>
-                  <select value={dailyActivityFilter} onChange={(e) => setDailyActivityFilter(e.target.value)} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
+                  <select value={dailyActivityFilter} onChange={(e) => { const value = e.target.value; setDailyActivityFilter(value); dailyServerPage.setFilter('activityType', value === 'todos' ? '' : value); }} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
                     <option value="todos">Actividad</option>
                     {Object.entries(activityLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
                   </select>
-                  <select value={dailyProjectFilter} onChange={(e) => setDailyProjectFilter(e.target.value)} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
+                  <select value={dailyProjectFilter} onChange={(e) => { const value = e.target.value; setDailyProjectFilter(value); dailyServerPage.setFilter('projectId', value === 'todos' ? '' : value); }} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
                     <option value="todos">Proyecto</option>
                     {myAssignedProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
                   </select>
                 </div>
                 <span className="inline-flex text-xs bg-slate-100 text-slate-600 font-semibold px-2 py-1 rounded">
-                  {dailyFilteredLogs.length} Entradas filtradas
+                  {dailyServerPage.total} Entradas filtradas
                 </span>
               </div>
 
-              {dailyView === 'list' && (dailyFilteredLogs.length === 0 ? (
+              {dailyView === 'list' && (dailyServerPage.loading ? <p role="status" className="py-4 text-center text-xs text-slate-500">Cargando partes...</p> : dailyServerPage.error ? <p role="alert" className="rounded-lg bg-rose-50 p-4 text-center text-xs text-rose-800">{dailyServerPage.error}</p> : dailyServerPage.total === 0 ? (
                 <div className="bg-white p-12 text-center rounded-2xl border border-dashed border-gray-250">
                   <Clock className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                   <p className="text-gray-500 text-sm">Sin registros para este mes.</p>
@@ -942,7 +1067,7 @@ export default function EmployeeDashboard({
                 </div>
               ) : (
                 <div className="space-y-4 max-h-[550px] overflow-y-auto pr-2">
-                  {dailyPagination.rows.map((log) => {
+                  {dailyServerPage.items.map((log) => {
                     const linkedProject = projects.find(p => p.id === log.projectId || (p.name || '').toLowerCase().trim() === (log.title || '').toLowerCase().trim());
                     const isSyncedProject = !!linkedProject;
                     const linkedSecondary = secondaryWorkItems.find((item) => item.id === log.secondaryWorkItemId);
@@ -992,7 +1117,7 @@ export default function EmployeeDashboard({
                       </div>
                     );
                   })}
-                  <Pagination {...dailyPagination} />
+                  <ServerPagination page={dailyServerPage.page} totalPages={dailyServerPage.totalPages} total={dailyServerPage.total} pageSize={dailyServerPage.pageSize} loading={dailyServerPage.loading} onPageChange={dailyServerPage.setPage} onPageSizeChange={dailyServerPage.setPageSize} />
                 </div>
               ))}
 
@@ -1022,6 +1147,9 @@ export default function EmployeeDashboard({
                         if (!date) return <div key={`empty-${idx}`} className="min-h-[76px] rounded-xl bg-slate-50/50" />;
                         const iso = toLocalDateInput(date);
                         const dayLogs = dailyFilteredLogs.filter((log) => log.date === iso);
+                        const approvedLeave = calendarLicensePage.items.some((request) => request.article !== 'Guardia en Feria' && request.startDate.slice(0, 10) <= iso && request.endDate.slice(0, 10) >= iso);
+                        const savedMode = dayLogs[0]?.mode;
+                        const laborStatus = approvedLeave ? 'Licencia' : iso < todayIso ? (savedMode ? modeLabels[savedMode] || savedMode : 'Sin evidencia') : ({ REMOTE: 'Remoto', PRESENTIAL: 'Presencial', STRIKE: 'Paro', WEEKEND: 'Fin de semana' }[getWorkdayStatus(iso, employee.remoteDaysAssigned, strikeConfig.nextDate)]);
                         const isSelected = selectedCalendarDate === iso;
                         const isToday = todayIso === iso;
                         return (
@@ -1033,6 +1161,7 @@ export default function EmployeeDashboard({
                           >
                             <span className={`block text-xs font-black ${isToday ? 'text-emerald-700' : 'text-slate-800'}`}>{date.getDate()}</span>
                             <div className="mt-1 space-y-1">
+                              <span className={`block truncate text-[9px] font-bold ${approvedLeave ? 'text-indigo-700' : 'text-slate-500'}`}>{laborStatus}</span>
                               {dayLogs.slice(0, 2).map((log) => (
                                 <span key={log.id} className={`block truncate text-[9px] font-bold border rounded px-1 py-0.5 ${modeBadgeClass(log.mode)}`}>
                                   {modeLabels[log.mode] || log.mode}{log.activityType ? ` · ${activityTypeLabel(log.activityType)}` : ''}
@@ -1102,7 +1231,7 @@ export default function EmployeeDashboard({
               }
 
               const isAssigned = selectedProj.assignedEmployeeIds.includes(employee.id);
-              const associatedLogs = workLogs.filter(w => w.projectId === selectedProj?.id || (w?.title || '').toLowerCase().trim() === (selectedProj?.name || '').toLowerCase().trim());
+              const associatedLogs = selectedProjectWorkLogsPage.items;
               const adminUpdates = selectedProj.updates || [];
 
               // Sort combined timeline descending
@@ -1410,15 +1539,15 @@ export default function EmployeeDashboard({
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {myAssignedProjects.length === 0 ? (
+                  {projectServerPage.loading ? <p role="status" className="col-span-full py-5 text-center text-xs text-slate-500">Cargando proyectos...</p> : projectServerPage.error ? <p role="alert" className="col-span-full rounded-lg bg-rose-50 p-4 text-center text-xs text-rose-800">{projectServerPage.error}</p> : projectServerPage.total === 0 ? (
                     <div className="col-span-2 text-center py-12 bg-white rounded-2xl border">
                       <Briefcase className="w-12 h-12 text-gray-300 mx-auto mb-2" />
                       <p className="text-gray-500">No hay proyectos activos registrados.</p>
                     </div>
                   ) : (
-                    projectPagination.rows.map((proj) => {
+                    projectServerPage.items.map((proj) => {
                       const isAssigned = proj.assignedEmployeeIds.includes(employee.id);
-                      const matchedLogs = workLogs.filter(log => (log.title || '').toLowerCase().trim() === (proj.name || '').toLowerCase().trim());
+                      const matchedLogsCount = proj.workLogsCount ?? 0;
                       const adminUpdatesCount = proj.updates?.length || 0;
                       
                       return (
@@ -1469,7 +1598,7 @@ export default function EmployeeDashboard({
                           <div className="mt-5 pt-3 border-t border-gray-105">
                             <div className="flex items-center justify-between text-[10px] font-bold text-gray-400 mb-3 font-mono">
                               <span className="text-indigo-650 bg-indigo-10s px-1.5 py-0.5 rounded">
-                                {matchedLogs.length} partes diarios equipo
+                                {matchedLogsCount} partes diarios equipo
                               </span>
                               <span className="text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded">
                                 {adminUpdatesCount} directas admin
@@ -1488,7 +1617,7 @@ export default function EmployeeDashboard({
                     })
                   )}
                 </div>
-                <Pagination {...projectPagination} />
+                <ServerPagination page={projectServerPage.page} totalPages={projectServerPage.totalPages} total={projectServerPage.total} pageSize={projectServerPage.pageSize} loading={projectServerPage.loading} onPageChange={projectServerPage.setPage} onPageSizeChange={projectServerPage.setPageSize} />
               </>
             )}
           </div>
@@ -1686,7 +1815,7 @@ export default function EmployeeDashboard({
                       ref={fileInputRef}
                       onChange={handleFileChange}
                       className="hidden" 
-                      accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                      accept=".pdf,.png,.jpg,.jpeg"
                     />
                     
                     {attachedFile ? (
@@ -1694,7 +1823,7 @@ export default function EmployeeDashboard({
                         <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
                         <div className="text-left font-mono">
                           <p className="font-semibold truncate max-w-xs">{attachedFile.name}</p>
-                          <p className="text-[10px] text-emerald-600">Adjuntado con éxito. Haz clic para cambiarlo.</p>
+                          <p className="text-[10px] text-emerald-600">Listo para adjuntar. Hacé clic para cambiarlo.</p>
                         </div>
                       </div>
                     ) : (
@@ -1709,9 +1838,10 @@ export default function EmployeeDashboard({
 
                 <button
                   type="submit"
-                  className="w-full cursor-pointer bg-slate-900 hover:bg-black text-white font-semibold text-xs py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
+                  disabled={isSavingLicense}
+                  className="w-full cursor-pointer bg-slate-900 hover:bg-black text-white font-semibold text-xs py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 disabled:cursor-wait disabled:opacity-60"
                 >
-                  <FileText className="w-4 h-4" /> Enviar Solicitud
+                  <FileText className="w-4 h-4" /> {isSavingLicense ? 'Guardando...' : licensePendingUploadId ? 'Reintentar certificado' : 'Enviar Solicitud'}
                 </button>
               </form>
             </div>
@@ -1720,14 +1850,14 @@ export default function EmployeeDashboard({
             <div className="lg:col-span-7 space-y-4">
               <h3 className="text-lg font-bold text-gray-900">Estado de mis Solicitudes</h3>
 
-              {myLicenseRequests.length === 0 ? (
+              {licenseServerPage.loading ? <p role="status" className="py-5 text-center text-xs text-slate-500">Cargando licencias...</p> : licenseServerPage.error ? <p role="alert" className="rounded-lg bg-rose-50 p-4 text-center text-xs text-rose-800">{licenseServerPage.error}</p> : licenseServerPage.total === 0 ? (
                 <div className="bg-white p-12 text-center rounded-2xl border">
                   <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                   <p className="text-gray-500 text-sm">No has realizado ninguna solicitud de licencia aún.</p>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {licensePagination.rows.map((req) => (
+                  {licenseServerPage.items.map((req) => (
                     <div 
                       key={req.id} 
                       className="bg-white p-4 rounded-xl border border-gray-150 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4"
@@ -1747,7 +1877,7 @@ export default function EmployeeDashboard({
                         
                         {req.certificateName && (
                           <span className="inline-flex items-center gap-1 mt-2 text-[10px] text-gray-500 bg-slate-100 px-1.5 py-0.5 rounded font-mono">
-                            <Upload className="w-3 h-3" /> Certificado: {req.certificateName}
+                            <Upload className="w-3 h-3" /> Certificado: <CertificateDownload licenseId={req.id} fileName={req.certificateName} />
                           </span>
                         )}
                       </div>
@@ -1767,7 +1897,7 @@ export default function EmployeeDashboard({
                       </div>
                     </div>
                   ))}
-                  <Pagination {...licensePagination} />
+                  <ServerPagination page={licenseServerPage.page} totalPages={licenseServerPage.totalPages} total={licenseServerPage.total} pageSize={licenseServerPage.pageSize} loading={licenseServerPage.loading} onPageChange={licenseServerPage.setPage} onPageSizeChange={licenseServerPage.setPageSize} />
                 </div>
               )}
             </div>
@@ -1778,7 +1908,7 @@ export default function EmployeeDashboard({
         {activeTab === 'perfil' && (
           <div className="space-y-8 animate-fade-in">
             {/* Resumen de Días de Feria, Compensatorios y Otras Licencias */}
-            <div className="bg-gradient-to-br from-slate-50 to-slate-150 p-6 rounded-3xl border border-gray-200 space-y-6">
+            <div className="employee-license-summary bg-gradient-to-br from-slate-50 to-slate-150 p-6 rounded-3xl border border-gray-200 space-y-6">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200/60 pb-4">
                 <div>
                   <h3 className="text-md font-bold text-slate-900 flex items-center gap-2">

@@ -1,7 +1,7 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig} from 'vite';
+import {defineConfig} from 'vitest/config';
 
 export default defineConfig(() => {
   return {
@@ -23,6 +23,11 @@ export default defineConfig(() => {
     },
     preview: {
       allowedHosts: ['cncivil04.pjn.gov.ar'],
+    },
+    test: {
+      environment: 'jsdom',
+      include: ['src/**/*.test.{ts,tsx}'],
+      restoreMocks: true,
     },
   };
 });

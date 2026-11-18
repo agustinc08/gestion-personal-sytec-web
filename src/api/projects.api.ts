@@ -1,9 +1,13 @@
 import { Deployment, Project, ProjectComment, ProjectUpdate } from '../types';
 import { api } from './client';
+import { normalizePage, PageResult } from './pagination';
 
 export const projectsApi = {
   all: async () => (await api.get<Project[]>('/projects')).data,
+  options: async () => (await api.get<Project[]>('/projects/options')).data,
+  page: async (params: Record<string, unknown>, signal?: AbortSignal) => normalizePage((await api.get<PageResult<Project> | Project[]>('/projects', { params, signal })).data),
   my: async () => (await api.get<Project[]>('/projects/my')).data,
+  myPage: async (params: Record<string, unknown>, signal?: AbortSignal) => normalizePage((await api.get<PageResult<Project> | Project[]>('/projects/my', { params, signal })).data),
   create: async (payload: Omit<Project, 'id' | 'status'>) => (await api.post<Project>('/projects', payload)).data,
   update: async (id: string, payload: Partial<Project>) => (await api.patch<Project>(`/projects/${id}`, payload)).data,
   remove: async (id: string) => (await api.delete(`/projects/${id}`)).data,

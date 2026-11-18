@@ -69,13 +69,14 @@ const pageResponse = (items: unknown[], url: URL) => {
   return { items: items.slice((page - 1) * pageSize, page * pageSize), page, pageSize, total: items.length, totalPages: Math.max(1, Math.ceil(items.length / pageSize)) };
 };
 
-async function installApiFixtures(page: Page, role: typeof roles[number], mustChangePassword = false) {
+async function installApiFixtures(page: Page, role: typeof roles[number], mustChangePassword = false, requests?: string[]) {
   const roleEmployees = employees.map((employee, index) => ({ ...employee, isAdmin: role === 'ADMIN' && index === 0 }));
   await page.route(/^http:\/\/(?!127\.0\.0\.1:4173|127\.0\.0\.1:49999).*/, (route) => route.abort());
   await page.route('http://127.0.0.1:49999/**', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     const path = url.pathname.replace(/^\/+/, '');
+    if (requests && request.method() === 'GET') requests.push(`${path}?${url.searchParams.toString()}`);
     const user = { id: 'user-qa', employeeId: 'employee-1', role, mustChangePassword, cuil: employees[0].cuil };
     if (path === 'auth/me' && !request.headers().authorization) {
       await route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ message: 'Unauthorized' }) });
@@ -84,19 +85,22 @@ async function installApiFixtures(page: Page, role: typeof roles[number], mustCh
     let body: any = [];
     if (path === 'auth/login') body = { accessToken: 'qa-token', user };
     else if (path === 'auth/me') body = { user };
+    else if (path === 'employees/options') body = roleEmployees;
     else if (path === 'employees/me') body = roleEmployees[0];
     else if (path === 'employees') {
       const query = (url.searchParams.get('q') || '').toLowerCase();
       const filtered = query ? roleEmployees.filter((employee) => `${employee.name} ${employee.cuil} ${employee.email} ${employee.dependency}`.toLowerCase().includes(query)) : roleEmployees;
       body = url.searchParams.has('page') ? pageResponse(filtered, url) : filtered;
     }
-    else if (path === 'projects/my') body = projects.slice(0, 5);
+    else if (path === 'projects/options') body = projects.map(({ id, name, assignedEmployeeIds, status, year, deadline }) => ({ id, name, assignedEmployeeIds, status, year, deadline, workLogsCount: 1 }));
+    else if (path === 'projects/my') body = pageResponse(projects.slice(0, 5), url);
     else if (path === 'projects') body = url.searchParams.has('page') ? pageResponse(projects, url) : projects;
     else if (path === 'work-logs/attendance') body = url.searchParams.has('page') ? pageResponse([], url) : [];
-    else if (path === 'work-logs/my') body = workLogs.slice(0, 5);
+    else if (path === 'work-logs/my') body = pageResponse(workLogs.slice(0, 10), url);
     else if (path === 'work-logs') body = url.searchParams.has('page') ? pageResponse(workLogs, url) : workLogs;
-    else if (path === 'licenses/my') body = licenses.slice(0, 5);
+    else if (path === 'licenses/my') body = pageResponse(licenses.slice(0, 5), url);
     else if (path === 'licenses') body = url.searchParams.has('page') ? pageResponse(licenses, url) : licenses;
+    else if (path === 'secondary-work-items/options') body = [];
     else if (path === 'secondary-work-items') body = url.searchParams.has('page') ? pageResponse([], url) : [];
     else if (path === 'licenses/rules') body = [];
     else if (path === 'strikes/config') body = { nextDate: '', nextCoverEmployeeId: '', lastDate: '', lastCoverEmployeeId: '', notes: '' };
@@ -111,7 +115,9 @@ async function installApiFixtures(page: Page, role: typeof roles[number], mustCh
       employeesActive: employees.length, dependenciesActive: 1, workLogsToday: 1, workLogsPendingToday: 1,
       pendingLicenses: 1, approvedLicensesMonth: 0, activeProjects: 1, overdueProjects: 0, upcomingProjects: 1,
       latestWorkLogsByEmployee: [], technologies: [], recentAudit: [], nextStrikeDuty: null,
+      projectsTotal: projects.length, pendingWorkLogEmployees: [],
     };
+    else if (path === 'dashboard/employee') body = { licenses: licenses.length, workLogs: workLogs.length, workLogToday: false, approvedLeaveToday: false, recentWorkLogs: workLogs.slice(0, 10), projects: [] };
     else if (path === 'dashboard/admin-worklog-calendar') body = { days: [], items: [] };
     else body = [];
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
@@ -146,6 +152,49 @@ async function login(page: Page, role: typeof roles[number], theme: typeof theme
   await expect(page.getByText('Sesión iniciada:', { exact: false })).toBeVisible({ timeout: 15_000 });
   await page.waitForTimeout(250);
 }
+
+test('admin bootstrap does not request unbounded history endpoints', async ({ page }) => {
+  const requests: string[] = [];
+  await installApiFixtures(page, 'ADMIN', false, requests);
+  await page.addInitScript(() => localStorage.setItem('gestion-sytec-theme', 'light'));
+  await page.goto('/gestion-personal-sytec/');
+  await page.getByLabel(/CUIL del Agente/i).fill('20-00000001-1');
+  await page.getByLabel('Contraseña').fill('qa-password');
+  await page.getByRole('button', { name: 'Ingresar al Sistema' }).click();
+  await expect(page.getByText('Sesión iniciada:', { exact: false })).toBeVisible({ timeout: 15_000 });
+  await expect.poll(() => requests.some((request) => request.startsWith('dashboard/admin-summary?'))).toBe(true);
+  const unbounded = requests.filter((request) => {
+    const [path, query] = request.split('?');
+    if (!['work-logs', 'licenses', 'secondary-work-items', 'work-logs/attendance', 'projects', 'employees'].includes(path)) return false;
+    return !/(^|&)(page|pageSize|limit|year|month|from|to|status|summary)=/.test(query || '');
+  });
+  expect(unbounded).toEqual([]);
+  expect(requests.some((request) => request.startsWith('employees/options?'))).toBe(true);
+  expect(requests.some((request) => request.startsWith('projects/options?'))).toBe(true);
+  console.info(`ADMIN bootstrap GET ${requests.length}: ${[...new Set(requests.map((request) => request.split('?')[0]))].join(', ')}`);
+});
+
+test('employee bootstrap requests only bounded worklog, license, and attendance data', async ({ page }) => {
+  const requests: string[] = [];
+  await installApiFixtures(page, 'EMPLOYEE', false, requests);
+  await page.addInitScript(() => localStorage.setItem('gestion-sytec-theme', 'light'));
+  await page.goto('/gestion-personal-sytec/');
+  await page.getByLabel(/CUIL del Agente/i).fill('20-00000001-1');
+  await page.getByLabel('Contraseña').fill('qa-password');
+  await page.getByRole('button', { name: 'Ingresar al Sistema' }).click();
+  await expect(page.getByText('Sesión iniciada:', { exact: false })).toBeVisible({ timeout: 15_000 });
+  await expect.poll(() => requests.some((request) => request.startsWith('dashboard/employee?'))).toBe(true);
+  await expect.poll(() => requests.some((request) => request.startsWith('work-logs/my?') && /(page|year|month)=/.test(request))).toBe(true);
+  await expect.poll(() => requests.some((request) => request.startsWith('licenses/my?') && /(page|from|to)=/.test(request))).toBe(true);
+  await expect.poll(() => requests.some((request) => request.startsWith('work-logs/attendance?') && /(page|year|month)=/.test(request))).toBe(true);
+  const unboundedHistorical = requests.filter((request) => {
+    const [path, query] = request.split('?');
+    return ['work-logs', 'licenses', 'secondary-work-items', 'work-logs/attendance'].includes(path)
+      && !/(^|&)(page|pageSize|limit|year|month|from|to|status|summary)=/.test(query || '');
+  });
+  expect(unboundedHistorical).toEqual([]);
+  console.info(`EMPLOYEE bootstrap GET ${requests.length}: ${[...new Set(requests.map((request) => request.split('?')[0]))].join(', ')}`);
+});
 
 async function expectNoHorizontalOverflow(page: Page, width: number) {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);

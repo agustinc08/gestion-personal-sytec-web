@@ -21,6 +21,7 @@ import { APP_NAME, APP_UPDATED_AT, APP_VERSION } from './config/app';
 import { Announcement, CreateEmployeePayload, DailyAttendance, Dependency, Employee, LicenseArticle, LicenseRequest, LicenseRule, Project, ProjectUpdate, SecondaryWorkItem, StrikeConfig, UpdateEmployeePayload, WorkLog } from './types';
 import RequiredPasswordChange from './components/RequiredPasswordChange';
 import { getInitialTheme, nextTheme, persistTheme } from './utils/theme';
+import { dashboardV2Api } from './api/v2.api';
 
 function SessionAvatar({ src, name }: { src?: string; name: string }) {
   const [imageFailed, setImageFailed] = useState(false);
@@ -64,39 +65,51 @@ export default function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [adminSummary, setAdminSummary] = useState<any>(null);
+  const [employeeSummary, setEmployeeSummary] = useState<any>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const refreshInFlight = useRef(false);
 
-  const refreshData = useCallback(async (user = currentUser, options: { silent?: boolean } = {}) => {
+  const refreshData = useCallback(async (user = currentUser, options: { silent?: boolean; scope?: 'all' | 'employees' | 'projects' | 'secondary' | 'licenses' | 'dashboard' | 'attendance' | 'config' } = {}) => {
     if (!user || refreshInFlight.current) return;
     refreshInFlight.current = true;
     if (!options.silent) setIsRefreshing(true);
     try {
       const isAdmin = user.role === 'ADMIN';
-      const [employeeRows, projectRows, secondaryRows, licenseRows, workLogRows, attendanceRows, rules, articleRows, strike, dependencyRows, announcementRows] = await Promise.all([
-        isAdmin ? employeesApi.all() : employeesApi.me().then((me) => [me]),
-        isAdmin ? projectsApi.all() : projectsApi.my(),
-        secondaryWorkItemsApi.all().catch(() => []),
-        isAdmin ? licensesApi.all() : licensesApi.my(),
-        isAdmin ? worklogsApi.all() : worklogsApi.my(),
-        worklogsApi.attendance(),
-        licensesApi.rules(),
-        licenseArticlesApi.all(isAdmin).catch(() => []),
-        strikeApi.config(),
-        isAdmin ? dependenciesApi.all() : Promise.resolve([]),
-        announcementsApi.active().catch(() => []),
+      const scope = options.scope || 'all';
+      const wants = (...domains: string[]) => scope === 'all' || domains.includes(scope);
+      const today = new Date();
+      const [employeeRows, projectRows, secondaryRows, licensePage, dashboard, attendanceRows, rules, articleRows, strike, dependencyRows, announcementRows] = await Promise.all([
+        wants('employees') ? (isAdmin ? employeesApi.options() : employeesApi.me().then((me) => [me])) : null,
+        wants('projects') ? projectsApi.options() : null,
+        wants('secondary') ? secondaryWorkItemsApi.options().catch(() => []) : null,
+        wants('licenses') ? (isAdmin ? licensesApi.page({ page: 1, pageSize: 50, status: 'pendiente' }) : licensesApi.myPage({ page: 1, pageSize: 25 })) : null,
+        wants('dashboard', 'employees', 'projects', 'licenses') ? (isAdmin ? dashboardV2Api.summary() : dashboardV2Api.employeeSummary()) : null,
+        wants('attendance') && !isAdmin ? worklogsApi.attendance({ year: today.getFullYear(), month: today.getMonth() + 1 }) : null,
+        scope === 'all' || scope === 'config' ? licensesApi.rules() : null,
+        (scope === 'all' || scope === 'config') && isAdmin ? licenseArticlesApi.all(true).catch(() => []) : null,
+        scope === 'all' || scope === 'config' ? strikeApi.config() : null,
+        (scope === 'all' || scope === 'config') && isAdmin ? dependenciesApi.all() : null,
+        scope === 'all' ? announcementsApi.active().catch(() => []) : null,
       ]);
-      setEmployees(employeeRows);
-      setProjects(projectRows);
-      setSecondaryWorkItems(secondaryRows);
-      setLicenseRequests(licenseRows);
-      setWorkLogs(workLogRows);
-      setDailyAttendances(attendanceRows);
-      setLicenseRules(rules);
-      setLicenseArticles(articleRows);
-      setStrikeConfig(strike);
-      if (isAdmin) setDependencies(dependencyRows);
-      setAnnouncements(announcementRows);
+      if (employeeRows) setEmployees(employeeRows);
+      if (projectRows) setProjects(projectRows);
+      if (secondaryRows) setSecondaryWorkItems(secondaryRows);
+      if (licensePage) setLicenseRequests(licensePage.items);
+      if (dashboard) {
+        const workLogRows = isAdmin
+          ? (dashboard.latestWorkLogsByEmployee || []).flatMap((row: any) => row.workLog ? [{ ...row.workLog, employeeId: row.employeeId }] : [])
+          : dashboard.recentWorkLogs || [];
+        setWorkLogs(workLogRows);
+        setAdminSummary(isAdmin ? dashboard : null);
+        setEmployeeSummary(isAdmin ? null : dashboard);
+      }
+      if (attendanceRows) setDailyAttendances(attendanceRows);
+      if (rules) setLicenseRules(rules);
+      if (articleRows) setLicenseArticles(articleRows);
+      if (strike) setStrikeConfig(strike);
+      if (dependencyRows) setDependencies(dependencyRows);
+      if (announcementRows) setAnnouncements(announcementRows);
       window.dispatchEvent(new CustomEvent('sytec:refreshed'));
     } finally {
       refreshInFlight.current = false;
@@ -119,7 +132,7 @@ export default function App() {
   }, []);
   useEffect(() => {
     if (!currentUser) return;
-    const refresh = () => { void refreshData(undefined, { silent: true }); };
+    const refresh = () => { void refreshData(undefined, { silent: true, scope: 'dashboard' }); };
     window.addEventListener('sytec:refresh', refresh);
     const intervalId = window.setInterval(refresh, 60000);
     return () => {
@@ -134,22 +147,13 @@ export default function App() {
   };
 
   const processedEmployees = useMemo(() => {
-    return employees.map((emp) => {
-      let taken = 0;
-      licenseRequests.forEach((req) => {
-        if (req.employeeId === emp.id && req.status === 'aprobado') {
-          const days = Math.max(1, Math.round((+new Date(req.endDate) - +new Date(req.startDate)) / 86400000) + 1);
-          if (req.article === 'Art. 14') taken += days;
-        }
-      });
-      return {
-        ...emp,
-        guardiasDone: normalizedNumber(emp.guardiasDone),
-        licenseDaysTaken: normalizedNumber(taken),
-        totalLicenseDays: normalizedNumber(emp.totalLicenseDays),
-      };
-    });
-  }, [employees, licenseRequests]);
+    return employees.map((emp) => ({
+      ...emp,
+      guardiasDone: normalizedNumber(emp.guardiasDone),
+      licenseDaysTaken: normalizedNumber(emp.licenseDaysTaken),
+      totalLicenseDays: normalizedNumber(emp.totalLicenseDays),
+    }));
+  }, [employees]);
 
   const currentEmployee = processedEmployees.find((e) => e.id === currentUser?.employeeId) || processedEmployees[0] || null;
   const currentRole = currentUser?.role === 'ADMIN' ? 'admin' : 'employee';
@@ -196,7 +200,7 @@ export default function App() {
       ? await employeesApi.updateMe(selfProfilePayload)
       : await employeesApi.update(updatedEmp.id, cleanEmployeeUpdatePayload(updatedEmp));
     setEmployees((prev) => prev.map((emp) => (emp.id === saved.id ? saved : emp)));
-    void refreshData(undefined, { silent: true });
+    void refreshData(undefined, { silent: true, scope: 'employees' });
     if (saved.id === currentUser?.employeeId) {
       setCurrentUser((prev: any) => prev ? { ...prev, email: saved.email } : prev);
     }
@@ -213,21 +217,21 @@ export default function App() {
   const handleAddWorkLog = async (newLogData: Omit<WorkLog, 'id'>) => {
     const saved = await worklogsApi.create(cleanWorkLogTimePayload(newLogData));
     setWorkLogs((prev) => [saved, ...prev]);
-    void refreshData(undefined, { silent: true });
+    void refreshData(undefined, { silent: true, scope: 'dashboard' });
     return saved;
   };
 
   const handleSaveAttendance = async (payload: Partial<DailyAttendance> & { date: string }) => {
     const saved = await worklogsApi.saveAttendance(payload);
     setDailyAttendances((prev) => [saved, ...prev.filter((row) => !(row.employeeId === saved.employeeId && String(row.date).slice(0, 10) === String(saved.date).slice(0, 10)))]);
-    void refreshData(undefined, { silent: true });
+    void refreshData(undefined, { silent: true, scope: 'attendance' });
     return saved;
   };
 
   const handleUpdateWorkLog = async (id: string, payload: Partial<WorkLog>) => {
     const saved = await worklogsApi.update(id, cleanWorkLogTimePayload(payload));
     setWorkLogs((prev) => prev.map((log) => log.id === saved.id ? saved : log));
-    void refreshData(undefined, { silent: true });
+    void refreshData(undefined, { silent: true, scope: 'dashboard' });
     return saved;
   };
 
@@ -235,21 +239,21 @@ export default function App() {
     const { certificateName: _ignoredCertificateName, ...payload } = newReqData;
     const saved = await licensesApi.create(payload);
     setLicenseRequests((prev) => [saved, ...prev]);
-    void refreshData(undefined, { silent: true });
+    void refreshData(undefined, { silent: true, scope: 'licenses' });
     return saved;
   };
 
   const handleUploadLicenseCertificate = async (id: string, file: File) => {
     const saved = await licensesApi.uploadCertificate(id, file);
     setLicenseRequests((prev) => prev.map((row) => row.id === saved.id ? saved : row));
-    void refreshData(undefined, { silent: true });
+    void refreshData(undefined, { silent: true, scope: 'licenses' });
     return saved;
   };
 
   const handleAddProject = async (newProjData: Omit<Project, 'id' | 'status'>) => {
     const saved = await projectsApi.create(newProjData);
     setProjects((prev) => [...prev, saved]);
-    void refreshData(undefined, { silent: true });
+    void refreshData(undefined, { silent: true, scope: 'projects' });
   };
 
   const handleUpdateProject = async (updatedProj: Project) => {
@@ -273,7 +277,7 @@ export default function App() {
     };
     const saved = await projectsApi.update(updatedProj.id, payload);
     setProjects((prev) => prev.map((p) => (p.id === saved.id ? saved : p)));
-    void refreshData(undefined, { silent: true });
+    void refreshData(undefined, { silent: true, scope: 'projects' });
     return saved;
   };
 
@@ -284,14 +288,14 @@ export default function App() {
       authorName: currentUser?.role === 'ADMIN' ? 'Administración' : currentEmployee?.name || 'Empleado',
     });
     setProjects((prev) => prev.map((p) => (p.id === saved.id ? saved : p)));
-    void refreshData(undefined, { silent: true });
+    void refreshData(undefined, { silent: true, scope: 'projects' });
     return saved;
   };
 
   const handleDeleteProject = async (id: string) => {
     await projectsApi.remove(id);
     setProjects((prev) => prev.filter((project) => project.id !== id));
-    void refreshData(undefined, { silent: true });
+    void refreshData(undefined, { silent: true, scope: 'projects' });
   };
 
   const handleAddDeployment = async (projectId: string, payload: any) => {
@@ -307,13 +311,13 @@ export default function App() {
   const handleAddManualLicense = async (reqData: Omit<LicenseRequest, 'id' | 'status' | 'dateRequested'> & { status: 'pendiente' | 'aprobado' }) => {
     const saved = await licensesApi.create(reqData);
     setLicenseRequests((prev) => [saved, ...prev]);
-    void refreshData(undefined, { silent: true });
+    void refreshData(undefined, { silent: true, scope: 'licenses' });
   };
 
   const handleAddEmployee = async (empData: CreateEmployeePayload) => {
     const saved = await employeesApi.create(empData);
     setEmployees((prev) => [...prev, saved]);
-    void refreshData(undefined, { silent: true });
+    void refreshData(undefined, { silent: true, scope: 'employees' });
     return saved;
   };
 
@@ -321,7 +325,7 @@ export default function App() {
     await dependenciesApi.create(payload); setDependencies(await dependenciesApi.all());
   };
   const handleUpdateDependency = async (id: string, payload: Partial<Dependency>) => {
-    await dependenciesApi.update(id, payload); setDependencies(await dependenciesApi.all()); await refreshData();
+    await dependenciesApi.update(id, payload); setDependencies(await dependenciesApi.all()); await refreshData(undefined, { scope: 'employees' });
   };
   const handleRemoveDependency = async (id: string) => {
     await dependenciesApi.remove(id); setDependencies(await dependenciesApi.all());
@@ -330,25 +334,25 @@ export default function App() {
   const handleApproveRejectRequest = async (reqId: string, targetStatus: 'aprobado' | 'rechazado') => {
     const saved = targetStatus === 'aprobado' ? await licensesApi.approve(reqId) : await licensesApi.reject(reqId);
     setLicenseRequests((prev) => prev.map((req) => (req.id === saved.id ? saved : req)));
-    void refreshData(undefined, { silent: true });
+    void refreshData(undefined, { silent: true, scope: 'licenses' });
   };
 
   const handleUpdateLicenseRequest = async (updatedReq: LicenseRequest) => {
     const saved = await licensesApi.update(updatedReq.id, updatedReq);
     setLicenseRequests((prev) => prev.map((req) => (req.id === saved.id ? saved : req)));
-    void refreshData(undefined, { silent: true });
+    void refreshData(undefined, { silent: true, scope: 'licenses' });
   };
 
   const handleDeleteLicenseRequest = async (id: string) => {
     await licensesApi.remove(id);
     setLicenseRequests((prev) => prev.filter((req) => req.id !== id));
-    void refreshData(undefined, { silent: true });
+    void refreshData(undefined, { silent: true, scope: 'licenses' });
   };
 
   const handleClearLicenses = async () => {
     await licensesApi.clear();
     setLicenseRequests([]);
-    void refreshData(undefined, { silent: true });
+    void refreshData(undefined, { silent: true, scope: 'licenses' });
   };
 
   const handleCreateLicenseArticle = async (payload: Partial<LicenseArticle>) => {
@@ -394,7 +398,7 @@ export default function App() {
   const handleDeleteEmployee = async (id: string) => {
     await employeesApi.remove(id);
     setEmployees((prev) => prev.filter((emp) => emp.id !== id));
-    void refreshData(undefined, { silent: true });
+    void refreshData(undefined, { silent: true, scope: 'employees' });
   };
 
   const handleUpdateAvatar = async (employeeId: string, avatarUrl: string | File) => {
@@ -412,20 +416,20 @@ export default function App() {
   const handleResetGuardias = async (employeeId: string) => {
     const saved = await employeesApi.resetGuardias(employeeId);
     setEmployees((prev) => prev.map((item) => (item.id === saved.id ? saved : item)));
-    await refreshData();
+    await refreshData(undefined, { scope: 'employees' });
     return saved;
   };
   const handleAdjustCompensatoryDays = async (employeeId: string, days: number) => {
     const saved = await employeesApi.adjustCompensatoryDays(employeeId, days);
     setEmployees((prev) => prev.map((item) => item.id === saved.id ? saved : item));
-    void refreshData(undefined, { silent: true });
+    void refreshData(undefined, { silent: true, scope: 'employees' });
     return saved;
   };
 
   const handleUpdateStrikeConfig = async (newConfig: StrikeConfig) => {
     const saved = await strikeApi.updateConfig(newConfig);
     setStrikeConfig(saved);
-    void refreshData(undefined, { silent: true });
+    void refreshData(undefined, { silent: true, scope: 'dashboard' });
   };
 
   const handleSwapStrikeDutyOrders = async (empIdA: string, empIdB: string) => {
@@ -437,7 +441,7 @@ export default function App() {
       employeesApi.update(empB.id, cleanEmployeeUpdatePayload({ ...empB, strikeDutyOrder: empA.strikeDutyOrder })),
     ]);
     setEmployees((prev) => prev.map((emp) => (emp.id === savedA.id ? savedA : emp.id === savedB.id ? savedB : emp)));
-    void refreshData(undefined, { silent: true });
+    void refreshData(undefined, { silent: true, scope: 'employees' });
   };
 
   const handleLogout = () => {
@@ -535,6 +539,7 @@ export default function App() {
             projects={projects}
             secondaryWorkItems={secondaryWorkItems}
             licenseRequests={licenseRequests}
+            summary={adminSummary}
             licenseRules={licenseRules}
             licenseArticles={licenseArticles}
             dependencies={dependencies}
@@ -580,6 +585,7 @@ export default function App() {
             projects={projects}
             secondaryWorkItems={secondaryWorkItems}
             licenseRequests={licenseRequests}
+            summary={employeeSummary}
             licenseRules={licenseRules}
             strikeConfig={strikeConfig}
             onAddWorkLog={handleAddWorkLog}

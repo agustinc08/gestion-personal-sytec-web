@@ -31,6 +31,7 @@ interface AdminDashboardProps {
   projects: Project[];
   secondaryWorkItems: SecondaryWorkItem[];
   licenseRequests: LicenseRequest[];
+  summary: any;
   licenseRules: LicenseRule[];
   licenseArticles: LicenseArticle[];
   dependencies: Dependency[];
@@ -75,6 +76,7 @@ export default function AdminDashboard({
   projects,
   secondaryWorkItems,
   licenseRequests,
+  summary,
   licenseRules,
   licenseArticles,
   dependencies,
@@ -151,32 +153,24 @@ export default function AdminDashboard({
 
   const todayStr = getArgentinaTodayDateOnly();
   const nonAdminEmployees = employees.filter(e => !e.isAdmin);
-  const agentsWithoutLog = nonAdminEmployees.filter(emp => {
-    const onApprovedLeave = licenseRequests.some((request) => request.employeeId === emp.id && request.status === 'aprobado' && request.article !== 'Guardia en Feria' && request.startDate.slice(0, 10) <= todayStr && request.endDate.slice(0, 10) >= todayStr);
-    return !onApprovedLeave && requiresWorkLog(currentWorkdayStatus(emp.remoteDaysAssigned, strikeConfig.nextDate)) && !workLogs.some(log => log.employeeId === emp.id && log.date === todayStr);
-  });
-  const projectStats = React.useMemo(() => {
-    const in7 = formatDateOnlyArgentina(addDaysDateOnly(todayStr, 7));
-    const in15 = formatDateOnlyArgentina(addDaysDateOnly(todayStr, 15));
-    const byStatus = (status: Project['status']) => projects.filter((p) => p.status === status).length;
-    const deadlineDate = (project: Project) => project.deadline?.slice(0, 10) || null;
-    return {
-      total: projects.length,
-      inProgress: byStatus('en_desarrollo'),
-      readyGit: byStatus('listo_git'),
-      readyDocker: byStatus('listo_docker'),
-      deployed: byStatus('deployado'),
-      finished: projects.filter((p) => p.status === 'completado' || p.status === 'terminado').length,
-      redesign: projects.filter((p) => p.needsRedesign || p.status === 'necesita_rediseno').length,
-      rework: projects.filter((p) => p.needsRework || p.status === 'necesita_rehacer').length,
-      overdue: projects.filter((p) => { const d = deadlineDate(p); return d && d < todayStr; }).length,
-      dueToday: projects.filter((p) => deadlineDate(p) === todayStr).length,
-      dueThisWeek: projects.filter((p) => { const d = deadlineDate(p); return d && d >= todayStr && d <= in7; }).length,
-      dueIn15: projects.filter((p) => { const d = deadlineDate(p); return d && d > in7 && d <= in15; }).length,
-      withoutDeadline: projects.filter((p) => !p.deadline).length,
-      withoutOwner: projects.filter((p) => !p.ownerId).length,
-    };
-  }, [projects, todayStr]);
+  const pendingWorkLogIds = new Set((summary?.pendingWorkLogEmployees || []).map((employee: any) => employee.id));
+  const agentsWithoutLog = employees.filter((employee) => pendingWorkLogIds.has(employee.id));
+  const projectStats = {
+    total: summary?.projectsTotal || 0,
+    inProgress: summary?.projectsInDevelopment || 0,
+    readyGit: summary?.projectsReadyForGit || 0,
+    readyDocker: summary?.projectsReadyForDocker || 0,
+    deployed: summary?.projectsDeployed || 0,
+    finished: summary?.projectsFinished || 0,
+    redesign: summary?.projectsNeedRedesign || 0,
+    rework: summary?.projectsNeedRework || 0,
+    overdue: summary?.overdueProjects || 0,
+    dueToday: summary?.dueTodayProjects || 0,
+    dueThisWeek: summary?.dueThisWeekProjects || 0,
+    dueIn15: summary?.dueIn15DaysProjects || 0,
+    withoutDeadline: summary?.projectsWithoutDeadline || 0,
+    withoutOwner: summary?.projectsWithoutOwner || 0,
+  };
 
   const activityLabels: Record<ActivityType, string> = {
     PROJECT: 'Proyecto',
@@ -190,22 +184,14 @@ export default function AdminDashboard({
   const splitTechStack = (value?: string) => (value || '').split(/[,;/|]+/).map((item) => item.trim()).filter(Boolean);
   const compactTechStack = (value?: string) => splitTechStack(value).slice(0, 4);
   const compensatoryText = (days: number) => days === 0 ? 'Sin días compensatorios acumulados' : days === 1 ? '1 día disponible' : `${days} días disponibles`;
-  const attendanceByEmployeeDate = React.useMemo(() => {
-    const rows: Record<string, DailyAttendance> = {};
-    dailyAttendances.forEach((row) => {
-      rows[`${row.employeeId}:${String(row.date).slice(0, 10)}`] = row;
-    });
-    return rows;
-  }, [dailyAttendances]);
-  const workLogTimeText = (log: WorkLog) => {
-    const attendance = attendanceByEmployeeDate[`${log.employeeId}:${String(log.date).slice(0, 10)}`];
-    return (attendance?.entryTime || attendance?.exitTime) ? `Horario: ${attendance.entryTime || '--:--'} a ${attendance.exitTime || '--:--'}` : '';
-  };
+  const workLogTimeText = (log: WorkLog) => (log.entryTime || log.exitTime) ? `Horario: ${log.entryTime || '--:--'} a ${log.exitTime || '--:--'}` : '';
 
   // Selected employee detail state
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(employees[0]?.id || null);
   const [employeeDependencyFilter, setEmployeeDependencyFilter] = useState('todas');
   const employeeServerPage = useServerPagination(employeesApi.page, { q: '', dependencyId: '' });
+  const selectedEmployeeWorkLogsPage = useServerPagination(worklogsApi.page, { employeeId: selectedEmployeeId || '' }, 5);
+  const selectedEmployeeLicensesPage = useServerPagination(licensesApi.page, { employeeId: selectedEmployeeId || '' }, 10);
 
   // Selected project for detail view state
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -245,6 +231,7 @@ export default function AdminDashboard({
   const projectServerPage = useServerPagination(projectsApi.page, {
     q: '', lifecycle: '', year: '', difficulty: '', status: '', ownerId: '', deadlineStatus: '', needsRedesign: '', needsRework: '',
   });
+  const selectedProjectWorkLogsPage = useServerPagination(worklogsApi.page, { projectId: selectedProjectId || '' }, 10);
   const [statsYear, setStatsYear] = useState(String(new Date().getFullYear()));
   const [statsMonth, setStatsMonth] = useState('todos');
   const [statsEmployeeId, setStatsEmployeeId] = useState('todos');
@@ -369,6 +356,11 @@ export default function AdminDashboard({
   const [secondarySearchQuery, setSecondarySearchQuery] = useState('');
   const [secondaryStatusFilter, setSecondaryStatusFilter] = useState('');
   const secondaryServerPage = useServerPagination(secondaryWorkItemsApi.page, { q: '', status: '' });
+  const selectedSecondaryWorkLogsPage = useServerPagination(worklogsApi.page, { secondaryWorkItemId: selectedSecondaryWorkItemId || '' }, 25);
+  useEffect(() => { selectedEmployeeWorkLogsPage.setFilter('employeeId', selectedEmployeeId || ''); }, [selectedEmployeeId]);
+  useEffect(() => { selectedEmployeeLicensesPage.setFilter('employeeId', selectedEmployeeId || ''); }, [selectedEmployeeId]);
+  useEffect(() => { selectedProjectWorkLogsPage.setFilter('projectId', selectedProjectId || ''); }, [selectedProjectId]);
+  useEffect(() => { selectedSecondaryWorkLogsPage.setFilter('secondaryWorkItemId', selectedSecondaryWorkItemId || ''); }, [selectedSecondaryWorkItemId]);
 
   React.useEffect(() => {
     const refreshLists = () => {
@@ -583,14 +575,10 @@ export default function AdminDashboard({
 
   // Detail panel for a selected employee
   const selectedEmp = employees.find(e => e.id === selectedEmployeeId);
-  const selectedEmpLogs = selectedEmp 
-    ? workLogs.filter(log => log.employeeId === selectedEmp.id).sort((a,b) => b.date.localeCompare(a.date)).slice(0, 5)
-    : [];
-  const selectedEmpLicenses = selectedEmp 
-    ? licenseRequests.filter(req => req.employeeId === selectedEmp.id).sort((a,b) => b.dateRequested.localeCompare(a.dateRequested))
-    : [];
+  const selectedEmpLogs = selectedEmployeeWorkLogsPage.items;
+  const selectedEmpLicenses = selectedEmployeeLicensesPage.items;
   const selectedSecondaryWorkItem = selectedSecondaryWorkItemId ? secondaryWorkItems.find((item) => item.id === selectedSecondaryWorkItemId) : null;
-  const selectedSecondaryLogs = selectedSecondaryWorkItemId ? workLogs.filter((log) => log.secondaryWorkItemId === selectedSecondaryWorkItemId).sort((a, b) => b.date.localeCompare(a.date)) : [];
+  const selectedSecondaryLogs = selectedSecondaryWorkLogsPage.items;
   const userPagination = usePagination(employees);
 
   const resetProjectForm = () => {
@@ -1025,16 +1013,16 @@ export default function AdminDashboard({
         <div className="flex gap-4 items-center bg-slate-50 p-4 rounded-2xl border border-slate-100 w-full md:w-auto">
           <div className="text-center px-4 border-r border-slate-200">
             <span className="text-[10px] uppercase font-bold text-slate-400 block">Empleados</span>
-            <span className="text-xl font-bold font-mono text-slate-800">{employees.length}</span>
+            <span className="text-xl font-bold font-mono text-slate-800">{summary?.employeesActive ?? employees.length}</span>
           </div>
           <div className="text-center px-4 border-r border-slate-200">
             <span className="text-[10px] uppercase font-bold text-slate-400 block">Proyectos</span>
-            <span className="text-xl font-bold font-mono text-indigo-700">{projects.length}</span>
+            <span className="text-xl font-bold font-mono text-indigo-700">{summary?.projectsTotal ?? projects.length}</span>
           </div>
           <div className="text-center px-4">
             <span className="text-[10px] uppercase font-bold text-slate-400 block">Lic. Pendientes</span>
             <span className="text-xl font-bold font-mono text-rose-600">
-              {licenseRequests.filter(r => r.status === 'pendiente').length}
+              {summary?.pendingLicenses ?? licenseRequests.length}
             </span>
           </div>
         </div>
@@ -1045,7 +1033,7 @@ export default function AdminDashboard({
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {[
             { label: 'Empleados sin parte hoy', count: agentsWithoutLog.length, detail: 'Revisar jornada y enviar recordatorio', tab: 'attendance' as const },
-            { label: 'Licencias pendientes', count: licenseRequests.filter((request) => request.status === 'pendiente').length, detail: 'Resolver solicitudes recibidas', tab: 'attendance' as const },
+            { label: 'Licencias pendientes', count: summary?.pendingLicenses ?? licenseRequests.length, detail: 'Resolver solicitudes recibidas', tab: 'attendance' as const },
             { label: 'Proyectos vencidos', count: projectStats.overdue, detail: 'Revisar deadlines vencidos', tab: 'projects' as const },
             { label: 'Vencen en 7 días', count: projectStats.dueThisWeek, detail: 'Revisar próximos deadlines', tab: 'projects' as const },
           ].map((item) => <button key={item.label} type="button" onClick={() => setAdminTab(item.tab)} className="rounded-lg border bg-white p-4 text-left hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-indigo-600">
@@ -1149,7 +1137,7 @@ export default function AdminDashboard({
         >
           <Calendar className="w-4 h-4" />
           Asistencia & Licencias 
-          {licenseRequests.some(r => r.status === 'pendiente') && (
+          {(summary?.pendingLicenses || 0) > 0 && (
             <span className="w-2 h-2 rounded-full bg-rose-500 inline-block animate-pulse"></span>
           )}
         </button>
@@ -1866,7 +1854,7 @@ export default function AdminDashboard({
                   <FileText className="w-5 h-5 text-red-600 animate-pulse" /> Solicitudes de Licencia Pendientes
                 </h3>
 
-                {licenseRequests.filter(req => req.status === 'pendiente').length === 0 ? (
+                {(summary?.pendingLicenses || 0) === 0 ? (
                   <div className="text-center py-8">
                     <Check className="w-12 h-12 text-emerald-500 mx-auto mb-2" />
                     <p className="text-gray-500 text-sm font-semibold">No hay solicitudes de licencias pendientes.</p>
@@ -1874,7 +1862,7 @@ export default function AdminDashboard({
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {licenseRequests.filter(req => req.status === 'pendiente').map((req) => {
+                    {licenseRequests.map((req) => {
                       const sender = employees.find(e => e.id === req.employeeId);
                       return (
                         <div key={req.id} className="p-4 rounded-xl border border-amber-200 bg-amber-50/20 shadow-sm relative">
@@ -2384,14 +2372,14 @@ export default function AdminDashboard({
         {adminTab === 'projects' && (
           <div className="w-full">
             {selectedProjectId ? (() => {
-              const selectedProj = projects.find(p => p.id === selectedProjectId);
+              const selectedProj = projectServerPage.items.find(p => p.id === selectedProjectId);
               if (!selectedProj) {
                 setSelectedProjectId(null);
                 return null;
               }
 
               // Get employee/work logs updates for this project
-              const associatedLogs = workLogs.filter(w => w.projectId === selectedProj?.id || (w?.title || '').toLowerCase().trim() === (selectedProj?.name || '').toLowerCase().trim());
+              const associatedLogs = selectedProjectWorkLogsPage.items;
               const adminUpdates = selectedProj.updates || [];
 
               // Unify timeline
@@ -3129,7 +3117,6 @@ export default function AdminDashboard({
                     <>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {projectServerPage.items.map((proj) => {
-                        const associatedLogs = workLogs.filter(w => w.projectId === proj.id || (w?.title || '').toLowerCase().trim() === (proj?.name || '').toLowerCase().trim());
                         const adminUpdatesCount = proj.updates?.length || 0;
                         return (
                           <div key={proj.id} className="bg-white p-5 rounded-xl border hover:border-indigo-200 transition-all shadow-sm flex flex-col justify-between">
@@ -3185,7 +3172,7 @@ export default function AdminDashboard({
                             <div className="mt-4 pt-3 border-t border-gray-100">
                               <div className="flex items-center justify-between text-[10px] font-bold text-gray-400 mb-3">
                                 <span className="text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
-                                  {associatedLogs.length} partes diarios
+                                  {proj.workLogsCount ?? 0} partes diarios
                                 </span>
                                 <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
                                   {adminUpdatesCount} directivas
@@ -3224,18 +3211,17 @@ export default function AdminDashboard({
                       {!secondaryServerPage.loading && secondaryServerPage.error && <p role="alert" className="rounded-lg bg-rose-50 p-4 text-center text-xs text-rose-800">{secondaryServerPage.error}</p>}
                       {!secondaryServerPage.loading && !secondaryServerPage.error && secondaryServerPage.total === 0 ? <p className="rounded-xl border border-dashed border-amber-200 bg-white/70 p-6 text-center text-xs text-slate-400">No se encontraron cargas secundarias para estos filtros.</p> : !secondaryServerPage.loading && !secondaryServerPage.error && <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
                         {secondaryServerPage.items.map((item) => {
-                          const itemLogs = workLogs.filter((log) => log.secondaryWorkItemId === item.id);
-                          const employeesForItem = item.employeeNames?.length ? item.employeeNames : Array.from(new Set(itemLogs.map((log) => employees.find((employee) => employee.id === log.employeeId)?.name).filter(Boolean))) as string[];
+                          const employeesForItem = item.employeeNames || [];
                           return <article key={item.id} className="rounded-xl border border-amber-100 bg-white p-4 text-xs shadow-sm">
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><h4 className="text-sm font-black text-slate-900">{item.name}</h4><p className="text-[10px] font-semibold text-slate-500">Última actividad: {item.lastActivityAt ? String(item.lastActivityAt).slice(0, 10) : '-'}</p></div><span className={`self-start rounded-full px-2 py-1 text-[9px] font-black ${item.status === 'ARCHIVED' ? 'bg-slate-100 text-slate-500' : 'bg-emerald-50 text-emerald-700'}`}>{item.status === 'ARCHIVED' ? 'Archivada' : 'Activa'}</span></div>
-                            <dl className="mt-3 grid grid-cols-2 gap-2"><div className="rounded-lg bg-slate-50 p-2"><dt className="text-[9px] font-black uppercase text-slate-400">Último agente</dt><dd className="font-bold text-slate-800">{item.lastEmployeeName || '-'}</dd></div><div className="rounded-lg bg-slate-50 p-2"><dt className="text-[9px] font-black uppercase text-slate-400">Partes cargados</dt><dd className="font-bold text-slate-800">{item.workLogsCount ?? itemLogs.length}</dd></div></dl>
+                            <dl className="mt-3 grid grid-cols-2 gap-2"><div className="rounded-lg bg-slate-50 p-2"><dt className="text-[9px] font-black uppercase text-slate-400">Último agente</dt><dd className="font-bold text-slate-800">{item.lastEmployeeName || '-'}</dd></div><div className="rounded-lg bg-slate-50 p-2"><dt className="text-[9px] font-black uppercase text-slate-400">Partes cargados</dt><dd className="font-bold text-slate-800">{item.workLogsCount ?? 0}</dd></div></dl>
                             <p className="mt-3 text-[10px] text-slate-500"><b>Empleados:</b> {employeesForItem.length ? employeesForItem.slice(0, 5).join(', ') : '-'}</p>
                             <div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => setSelectedSecondaryWorkItemId(selectedSecondaryWorkItemId === item.id ? null : item.id)} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] font-bold text-amber-800">{selectedSecondaryWorkItemId === item.id ? 'Ocultar partes' : 'Ver partes'}</button>{item.status !== 'ARCHIVED' && <button type="button" onClick={() => secondaryWorkItemsApi.update(item.id, { status: 'ARCHIVED' }).then(() => { triggerAlert('success', 'Carga secundaria archivada.'); onRefresh?.(); }).catch(() => triggerAlert('error', 'No se pudo archivar la carga secundaria.'))} className="rounded-lg border px-3 py-2 text-[10px] font-bold text-slate-600">Archivar</button>}</div>
                           </article>;
                         })}
                       </div>}
                       <ServerPagination page={secondaryServerPage.page} totalPages={secondaryServerPage.totalPages} total={secondaryServerPage.total} pageSize={secondaryServerPage.pageSize} loading={secondaryServerPage.loading} onPageChange={secondaryServerPage.setPage} onPageSizeChange={secondaryServerPage.setPageSize} />
-                      {selectedSecondaryWorkItem && <div className="mt-4 rounded-xl border bg-white p-4"><h4 className="font-black text-slate-900">Partes de {selectedSecondaryWorkItem.name}</h4><div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">{selectedSecondaryLogs.length ? selectedSecondaryLogs.map((log) => { const employee = employees.find((row) => row.id === log.employeeId); return <article key={log.id} className="rounded-lg bg-slate-50 p-3"><div className="flex flex-wrap justify-between gap-2"><b>{employee?.name || 'Empleado'}</b><span className="text-[10px] font-bold text-slate-400">{log.date} · {log.hours ?? 0} h</span></div><p className="mt-1 font-bold text-amber-700">{log.title}</p><p className="mt-1 whitespace-pre-wrap text-slate-600">{log.description}</p></article>; }) : <p className="text-xs text-slate-400">No hay partes asociados cargados en memoria. Usá Actualizar para refrescar.</p>}</div></div>}
+                      {selectedSecondaryWorkItem && <div className="mt-4 rounded-xl border bg-white p-4"><h4 className="font-black text-slate-900">Partes de {selectedSecondaryWorkItem.name}</h4><div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">{selectedSecondaryLogs.length ? selectedSecondaryLogs.map((log) => { const employee = employees.find((row) => row.id === log.employeeId); return <article key={log.id} className="rounded-lg bg-slate-50 p-3"><div className="flex flex-wrap justify-between gap-2"><b>{employee?.name || 'Empleado'}</b><span className="text-[10px] font-bold text-slate-400">{log.date} · {log.hours ?? 0} h</span></div><p className="mt-1 font-bold text-amber-700">{log.title}</p><p className="mt-1 whitespace-pre-wrap text-slate-600">{log.description}</p></article>; }) : <p className="text-xs text-slate-400">No hay partes asociados en esta página.</p>}</div><ServerPagination page={selectedSecondaryWorkLogsPage.page} totalPages={selectedSecondaryWorkLogsPage.totalPages} total={selectedSecondaryWorkLogsPage.total} pageSize={selectedSecondaryWorkLogsPage.pageSize} loading={selectedSecondaryWorkLogsPage.loading} onPageChange={selectedSecondaryWorkLogsPage.setPage} onPageSizeChange={selectedSecondaryWorkLogsPage.setPageSize} /></div>}
                     </section>
                     </>
                   )}

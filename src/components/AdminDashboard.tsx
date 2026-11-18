@@ -3,6 +3,7 @@ import { statisticsApi } from '../api/statistics.api';
 import { secondaryWorkItemsApi } from '../api/secondaryWorkItems.api';
 import { CreateEmployeePayload, DailyAttendance, Dependency, Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, LicenseArticle, ActivityType, StatisticsResponse, SecondaryWorkItem } from '../types';
 import { activityTypeLabel, deploymentEnvironmentLabel, deploymentStatusLabel, difficultyLabel, licenseStatusLabel, projectStatusLabel, statColumnLabel } from '../utils/labels';
+import { projectLifecycle } from '../utils/project-lifecycle';
 import { addDaysDateOnly, formatDateOnlyArgentina, getArgentinaTodayDateOnly } from '../utils/date';
 import { 
   Users, Calendar, Briefcase, Plus, Check, X, FileText, 
@@ -228,6 +229,7 @@ export default function AdminDashboard({
   const [projectYearFilter, setProjectYearFilter] = useState('todos');
   const [projectDifficultyFilter, setProjectDifficultyFilter] = useState('todos');
   const [projectStatusFilter, setProjectStatusFilter] = useState('todos');
+  const [projectLifecycleFilter, setProjectLifecycleFilter] = useState('todos');
   const [projectOwnerFilter, setProjectOwnerFilter] = useState('todos');
   const [projectDeadlineFilter, setProjectDeadlineFilter] = useState('todos');
   const [projectRedesignFilter, setProjectRedesignFilter] = useState('todos');
@@ -569,6 +571,7 @@ export default function AdminDashboard({
     (projectYearFilter === 'todos' || String(proj.year) === projectYearFilter) &&
     (projectDifficultyFilter === 'todos' || proj.difficulty === projectDifficultyFilter) &&
     (projectStatusFilter === 'todos' || proj.status === projectStatusFilter) &&
+    (projectLifecycleFilter === 'todos' || projectLifecycle(proj.status) === projectLifecycleFilter) &&
     (projectOwnerFilter === 'todos' || (projectOwnerFilter === 'sin_responsable' ? !proj.ownerId : proj.ownerId === projectOwnerFilter)) &&
     (projectDeadlineFilter === 'todos' || proj.deadlineStatus === projectDeadlineFilter) &&
     (projectRedesignFilter === 'todos' || String(!!proj.needsRedesign || proj.status === 'necesita_rediseno') === projectRedesignFilter) &&
@@ -587,7 +590,7 @@ export default function AdminDashboard({
   const employeePagination = usePagination(filteredEmployees, [employeeDependencyFilter]);
   const userPagination = usePagination(employees);
   const workLogPagination = usePagination(adminFilteredWorkLogs, [adminWorkLogYear, adminWorkLogMonth, adminWorkLogEmployeeId, adminWorkLogMode, adminWorkLogActivityType, adminWorkLogProjectId]);
-  const projectPagination = usePagination(adminFilteredProjects, [projectYearFilter, projectDifficultyFilter, projectStatusFilter, projectOwnerFilter, projectDeadlineFilter, projectRedesignFilter, projectReworkFilter]);
+  const projectPagination = usePagination(adminFilteredProjects, [projectYearFilter, projectDifficultyFilter, projectStatusFilter, projectLifecycleFilter, projectOwnerFilter, projectDeadlineFilter, projectRedesignFilter, projectReworkFilter]);
   const licensePagination = usePagination(adminFilteredLicenses, [licenseSearchQuery, licenseStatusFilter]);
 
   const resetProjectForm = () => {
@@ -3044,6 +3047,12 @@ export default function AdminDashboard({
                 <div className="lg:col-span-7 space-y-4 animate-fade-in">
                   <h3 className="text-lg font-bold text-slate-900">Proyectos de la Organización</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 bg-white border border-gray-150 rounded-xl p-3">
+                    <select aria-label="Ciclo de vida del proyecto" value={projectLifecycleFilter} onChange={(e) => setProjectLifecycleFilter(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
+                      <option value="todos">Todos los ciclos</option>
+                      <option value="active">Activos</option>
+                      <option value="completed">Finalizados</option>
+                      <option value="archived">Archivados</option>
+                    </select>
                     <select value={projectYearFilter} onChange={(e) => setProjectYearFilter(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
                       <option value="todos">Todos los años</option>
                       {Array.from(new Set(projects.map((p) => p.year).filter(Boolean))).map((year) => <option key={year} value={year}>{year}</option>)}

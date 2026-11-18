@@ -4,6 +4,8 @@ import { DailyAttendance, Employee, WorkLog, Project, ProjectUpdate, LicenseRequ
 import { activityTypeLabel, deploymentEnvironmentLabel, deploymentStatusLabel, difficultyLabel, licenseStatusLabel, projectStatusLabel } from '../utils/labels';
 import { getArgentinaTodayDateOnly } from '../utils/date';
 import { currentWorkdayStatus, getWorkdayStatus, requiresWorkLog } from '../utils/workday';
+import { copyWorkLogDraft, employeeDaySummary } from '../utils/employee-day';
+import { createLicenseRequestWithOptionalCertificate } from '../utils/license-submit';
 import {
   Calendar, CheckCircle, FileText, User, Briefcase, Plus, Clock, 
   MapPin, ShieldAlert, Upload, Download, CheckCircle2, ChevronRight, AlertCircle, FileSpreadsheet,
@@ -318,16 +320,16 @@ export default function EmployeeDashboard({
   const copyPreviousWorkLog = () => {
     const previous = myWorkLogs.find((log) => log.date < todayStr);
     if (!previous) return;
-    const projectIsAssigned = !!previous.projectId && myAssignedProjects.some((project) => project.id === previous.projectId);
+    const draft = copyWorkLogDraft(previous, myAssignedProjects.map((project) => project.id));
     setEditingWorkLogId(null);
-    setLogTitle(previous.title);
-    setLogDescription(previous.description);
-    setLogHours(previous.hours === undefined ? '' : String(previous.hours));
-    setLogActivityType(previous.activityType || 'PROJECT');
-    setWorkItemType(projectIsAssigned ? 'PROJECT' : previous.secondaryWorkItemId ? 'SECONDARY' : 'PROJECT');
-    setLogProjectId(projectIsAssigned ? previous.projectId || '' : '');
-    setSecondaryWorkItemId(previous.secondaryWorkItemId || '');
-    setSecondaryWorkItemName(previous.secondaryWorkItemName || '');
+    setLogTitle(draft.title);
+    setLogDescription(draft.description);
+    setLogHours(draft.hours);
+    setLogActivityType(draft.activityType);
+    setWorkItemType(draft.workItemType);
+    setLogProjectId(draft.projectId);
+    setSecondaryWorkItemId(draft.secondaryWorkItemId);
+    setSecondaryWorkItemName(draft.secondaryWorkItemName);
     setOverrideDate(false);
     setLogDate(todayStr);
     setActiveTab('carga_diaria');
@@ -500,34 +502,29 @@ export default function EmployeeDashboard({
     }
 
     setIsSavingLicense(true);
+    let requestCreated = false;
     try {
-      const created = await onAddLicenseRequest({
-        employeeId: employee.id,
-        article: licenseArticle,
-        startDate: licenseStart,
-        endDate: licenseEnd,
-        reason: licenseReason,
-      });
-      if (attachedFile) {
-        setLicensePendingUploadId(created.id);
-        try {
-          await onUploadLicenseCertificate(created.id, attachedFile);
-          setAttachedFile(null);
-          setLicenseStart('');
-          setLicenseEnd('');
-          setLicenseReason('');
-          triggerAlert('success', 'Solicitud y certificado enviados correctamente.');
-        } catch (error: any) {
-          triggerAlert('error', error?.response?.data?.message || 'La solicitud se guardó, pero no se pudo adjuntar el certificado. Reintentá la carga.');
-        }
-      } else {
-        setLicenseStart('');
-        setLicenseEnd('');
-        setLicenseReason('');
-        triggerAlert('success', 'Solicitud de licencia enviada a la Administración para aprobación.');
-      }
+      await createLicenseRequestWithOptionalCertificate(
+        async () => {
+          const created = await onAddLicenseRequest({ employeeId: employee.id, article: licenseArticle, startDate: licenseStart, endDate: licenseEnd, reason: licenseReason });
+          requestCreated = true;
+          return created;
+        },
+        async (created: LicenseRequest) => {
+          setLicensePendingUploadId(created.id);
+          await onUploadLicenseCertificate(created.id, attachedFile!);
+        },
+        Boolean(attachedFile),
+      );
+      setLicensePendingUploadId(null);
+      setAttachedFile(null);
+      setLicenseStart('');
+      setLicenseEnd('');
+      setLicenseReason('');
+      triggerAlert('success', attachedFile ? 'Solicitud y certificado enviados correctamente.' : 'Solicitud de licencia enviada a la Administración para aprobación.');
     } catch (error: any) {
-      triggerAlert('error', error?.response?.data?.message || 'No se pudo guardar la solicitud. Revisá los datos e intentá de nuevo.');
+      const fallback = requestCreated ? 'La solicitud se guardó, pero no se pudo adjuntar el certificado. Reintentá la carga.' : 'No se pudo guardar la solicitud. Revisá los datos e intentá de nuevo.';
+      triggerAlert('error', error?.response?.data?.message || fallback);
     } finally {
       setIsSavingLicense(false);
     }
@@ -543,8 +540,9 @@ export default function EmployeeDashboard({
   const hasLogToday = workLogs.some(log => log.employeeId === employee.id && log.date === todayStr);
   const todayWorkday = currentWorkdayStatus(employee.remoteDaysAssigned, strikeConfig.nextDate);
   const approvedLeaveToday = myLicenseRequests.some((request) => request.status === 'aprobado' && request.article !== 'Guardia en Feria' && request.startDate.slice(0, 10) <= todayStr && request.endDate.slice(0, 10) >= todayStr);
+  const todaySummary = employeeDaySummary(todayWorkday, approvedLeaveToday, hasLogToday);
   const todayAttendance = attendanceByDate[todayStr];
-  const todayModeLabel = approvedLeaveToday ? 'Licencia aprobada' : todayWorkday === 'REMOTE' ? 'Remoto' : todayWorkday === 'PRESENTIAL' ? 'Presencial' : todayWorkday === 'STRIKE' ? 'Paro' : 'Fin de semana';
+  const todayModeLabel = todaySummary.label;
   const nextProjectDeadline = myAssignedProjects.filter((project) => project.deadline && project.deadline.slice(0, 10) >= todayStr).sort((a, b) => a.deadline!.localeCompare(b.deadline!))[0];
   const workdayStatus = getWorkdayStatus(logDate, employee.remoteDaysAssigned, strikeConfig.nextDate);
   useEffect(() => {
@@ -588,7 +586,7 @@ export default function EmployeeDashboard({
           </div>
           <div className="flex flex-wrap gap-2">
             <span className={`rounded-full px-3 py-1.5 text-xs font-semibold ${hasLogToday ? 'bg-emerald-50 text-emerald-800' : approvedLeaveToday || !requiresWorkLog(todayWorkday) ? 'bg-slate-100 text-slate-700' : 'bg-amber-50 text-amber-900'}`}>
-              {hasLogToday ? 'Parte cargado' : approvedLeaveToday || !requiresWorkLog(todayWorkday) ? 'No requiere parte' : 'Parte pendiente'}
+              {todaySummary.workLogLabel}
             </span>
             {nextProjectDeadline && <span className="rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-800">Próximo deadline: {new Date(`${nextProjectDeadline.deadline!.slice(0, 10)}T12:00:00`).toLocaleDateString('es-AR')}</span>}
           </div>
@@ -1121,6 +1119,9 @@ export default function EmployeeDashboard({
                         if (!date) return <div key={`empty-${idx}`} className="min-h-[76px] rounded-xl bg-slate-50/50" />;
                         const iso = toLocalDateInput(date);
                         const dayLogs = dailyFilteredLogs.filter((log) => log.date === iso);
+                        const approvedLeave = myLicenseRequests.some((request) => request.status === 'aprobado' && request.article !== 'Guardia en Feria' && request.startDate.slice(0, 10) <= iso && request.endDate.slice(0, 10) >= iso);
+                        const savedMode = dayLogs[0]?.mode;
+                        const laborStatus = approvedLeave ? 'Licencia' : iso < todayIso ? (savedMode ? modeLabels[savedMode] || savedMode : 'Sin evidencia') : ({ REMOTE: 'Remoto', PRESENTIAL: 'Presencial', STRIKE: 'Paro', WEEKEND: 'Fin de semana' }[getWorkdayStatus(iso, employee.remoteDaysAssigned, strikeConfig.nextDate)]);
                         const isSelected = selectedCalendarDate === iso;
                         const isToday = todayIso === iso;
                         return (
@@ -1132,6 +1133,7 @@ export default function EmployeeDashboard({
                           >
                             <span className={`block text-xs font-black ${isToday ? 'text-emerald-700' : 'text-slate-800'}`}>{date.getDate()}</span>
                             <div className="mt-1 space-y-1">
+                              <span className={`block truncate text-[9px] font-bold ${approvedLeave ? 'text-indigo-700' : 'text-slate-500'}`}>{laborStatus}</span>
                               {dayLogs.slice(0, 2).map((log) => (
                                 <span key={log.id} className={`block truncate text-[9px] font-bold border rounded px-1 py-0.5 ${modeBadgeClass(log.mode)}`}>
                                   {modeLabels[log.mode] || log.mode}{log.activityType ? ` · ${activityTypeLabel(log.activityType)}` : ''}

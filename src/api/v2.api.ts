@@ -1,8 +1,9 @@
 import { api } from './client';
 import { getArgentinaTodayDateOnly } from '../utils/date';
+import { normalizePage, PageResult } from './pagination';
 
 export const auditApi = {
-  all: async (params: Record<string, unknown>) => (await api.get('/audit-logs', { params })).data,
+  all: async (params: Record<string, unknown>) => normalizePage((await api.get<PageResult<any> | any[]>('/audit-logs', { params })).data),
 };
 export const dashboardV2Api = {
   summary: async () => (await api.get('/dashboard/admin-summary')).data,

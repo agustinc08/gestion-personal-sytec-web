@@ -8,6 +8,7 @@ export const auditApi = {
 export const dashboardV2Api = {
   summary: async () => (await api.get('/dashboard/admin-summary')).data,
   worklogCalendar: async (params: { year: number; month: number }) => (await api.get('/dashboard/admin-worklog-calendar', { params })).data,
+  employeeSummary: async () => (await api.get('/dashboard/employee')).data,
 };
 export const settingsApi = {
   all: async () => (await api.get('/settings')).data,

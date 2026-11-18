@@ -9,6 +9,7 @@ const normalizeEmployee = (employee: Employee) => ({
 
 export const employeesApi = {
   all: async () => (await api.get<Employee[]>('/employees')).data.map(normalizeEmployee),
+  options: async () => (await api.get<Employee[]>('/employees/options')).data.map(normalizeEmployee),
   page: async (params: Record<string, unknown>, signal?: AbortSignal) => {
     const response = normalizePage((await api.get<PageResult<Employee> | Employee[]>('/employees', { params, signal })).data);
     return { ...response, items: response.items.map(normalizeEmployee) };

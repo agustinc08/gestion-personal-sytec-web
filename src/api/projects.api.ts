@@ -4,6 +4,7 @@ import { normalizePage, PageResult } from './pagination';
 
 export const projectsApi = {
   all: async () => (await api.get<Project[]>('/projects')).data,
+  options: async () => (await api.get<Project[]>('/projects/options')).data,
   page: async (params: Record<string, unknown>, signal?: AbortSignal) => normalizePage((await api.get<PageResult<Project> | Project[]>('/projects', { params, signal })).data),
   my: async () => (await api.get<Project[]>('/projects/my')).data,
   myPage: async (params: Record<string, unknown>, signal?: AbortSignal) => normalizePage((await api.get<PageResult<Project> | Project[]>('/projects/my', { params, signal })).data),

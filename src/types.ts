@@ -182,6 +182,7 @@ export interface Project {
   deadlineStatus?: 'en_termino' | 'proximo' | 'esta_semana' | 'vence_hoy' | 'vencido' | 'sin_fecha';
   updatedAt?: string;
   lastActivityAt?: string;
+    workLogsCount?: number;
   updates?: ProjectUpdate[];
   deployments?: Deployment[];
 }

@@ -27,6 +27,7 @@ interface EmployeeDashboardProps {
   projects: Project[];
   secondaryWorkItems: SecondaryWorkItem[];
   licenseRequests: LicenseRequest[];
+  summary: any;
   licenseRules: LicenseRule[];
   strikeConfig: StrikeConfig;
   onAddWorkLog: (log: Omit<WorkLog, 'id'>) => Promise<WorkLog> | WorkLog;
@@ -52,6 +53,7 @@ export default function EmployeeDashboard({
   projects,
   secondaryWorkItems,
   licenseRequests,
+  summary,
   licenseRules,
   strikeConfig,
   onAddWorkLog,
@@ -233,7 +235,7 @@ export default function EmployeeDashboard({
   // Success messages alerts
   const [alertMsg, setAlertMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const myWorkLogs = workLogs.filter(log => log.employeeId === employee.id).sort((a,b) => b.date.localeCompare(a.date));
+  const myWorkLogs = workLogs;
   const myLicenseRequests = licenseRequests.filter(req => req.employeeId === employee.id).sort((a,b) => b.dateRequested.localeCompare(a.dateRequested));
 
   // Determine projects I'm assigned or those matched by titles
@@ -282,21 +284,26 @@ export default function EmployeeDashboard({
       setIsSavingAttendance(false);
     }
   };
-  const dailyFilteredLogs = myWorkLogs.filter((log) => (
-    (log.date || '').slice(0, 4) === dailyYear &&
-    String(Number((log.date || '').slice(5, 7))) === dailyMonth &&
-    (dailyModeFilter === 'todos' || log.mode === dailyModeFilter) &&
-    (dailyActivityFilter === 'todos' || log.activityType === dailyActivityFilter) &&
-    (dailyProjectFilter === 'todos' || log.projectId === dailyProjectFilter)
-  ));
-  const dailyServerPage = useServerPagination(worklogsApi.myPage, { year: dailyYear, month: dailyMonth, employeeId: employee.id, mode: '', activityType: '', projectId: '' });
+  const dailyServerPage = useServerPagination(worklogsApi.myPage, { year: dailyYear, month: dailyMonth, employeeId: employee.id, mode: '', activityType: '', projectId: '' }, 100);
   const projectServerPage = useServerPagination(projectsApi.myPage, {});
   const licenseServerPage = useServerPagination(licensesApi.myPage, {});
+  const calendarLicensePage = useServerPagination(licensesApi.myPage, { from: `${dailyYear}-${dailyMonth.padStart(2, '0')}-01`, to: `${dailyYear}-${dailyMonth.padStart(2, '0')}-31`, status: 'aprobado' }, 100);
+  const selectedProjectWorkLogsPage = useServerPagination(
+    (filters, signal) => filters.projectId ? worklogsApi.myPage(filters, signal) : Promise.resolve({ items: [], page: 1, pageSize: 10, total: 0, totalPages: 1 }),
+    { projectId: '' },
+    10,
+  );
+  useEffect(() => { selectedProjectWorkLogsPage.setFilter('projectId', selectedProjectId || ''); }, [selectedProjectId, selectedProjectWorkLogsPage.setFilter]);
   useEffect(() => {
-    const refreshPages = () => { dailyServerPage.refresh(); projectServerPage.refresh(); licenseServerPage.refresh(); };
+    calendarLicensePage.setFilter('from', `${dailyYear}-${dailyMonth.padStart(2, '0')}-01`);
+    calendarLicensePage.setFilter('to', `${dailyYear}-${dailyMonth.padStart(2, '0')}-31`);
+  }, [dailyYear, dailyMonth, calendarLicensePage.setFilter]);
+  useEffect(() => {
+    const refreshPages = () => { dailyServerPage.refresh(); projectServerPage.refresh(); licenseServerPage.refresh(); calendarLicensePage.refresh(); selectedProjectWorkLogsPage.refresh(); };
     window.addEventListener('sytec:refreshed', refreshPages);
     return () => window.removeEventListener('sytec:refreshed', refreshPages);
-  }, [dailyServerPage.refresh, projectServerPage.refresh, licenseServerPage.refresh]);
+  }, [dailyServerPage.refresh, projectServerPage.refresh, licenseServerPage.refresh, calendarLicensePage.refresh, selectedProjectWorkLogsPage.refresh]);
+  const dailyFilteredLogs = dailyServerPage.items;
   const selectedDayLogs = dailyFilteredLogs.filter((log) => log.date === selectedCalendarDate);
   const calendarYear = Number(dailyYear) || new Date().getFullYear();
   const calendarMonthIndex = (Number(dailyMonth) || new Date().getMonth() + 1) - 1;
@@ -546,9 +553,9 @@ export default function EmployeeDashboard({
   const remainingDaysToTake = safeDayNumber(safeDayNumber(employee.totalLicenseDays) - safeDayNumber(employee.licenseDaysTaken));
 
   const todayStr = getArgentinaTodayDateOnly();
-  const hasLogToday = workLogs.some(log => log.employeeId === employee.id && log.date === todayStr);
+  const hasLogToday = Boolean(summary?.workLogToday);
   const todayWorkday = currentWorkdayStatus(employee.remoteDaysAssigned, strikeConfig.nextDate);
-  const approvedLeaveToday = myLicenseRequests.some((request) => request.status === 'aprobado' && request.article !== 'Guardia en Feria' && request.startDate.slice(0, 10) <= todayStr && request.endDate.slice(0, 10) >= todayStr);
+  const approvedLeaveToday = Boolean(summary?.approvedLeaveToday);
   const todaySummary = employeeDaySummary(todayWorkday, approvedLeaveToday, hasLogToday);
   const todayAttendance = attendanceByDate[todayStr];
   const todayModeLabel = todaySummary.label;
@@ -701,7 +708,7 @@ export default function EmployeeDashboard({
           }`}
         >
           <Calendar className="w-4 h-4" />
-          Parte Diario ({myWorkLogs.length})
+          Parte Diario ({summary?.workLogs ?? myWorkLogs.length})
         </button>
         <button
           onClick={() => setActiveTab('proyectos')}
@@ -734,7 +741,7 @@ export default function EmployeeDashboard({
           }`}
         >
           <FileText className="w-4 h-4" />
-          Solicitar Licencia ({myLicenseRequests.length})
+          Solicitar Licencia ({summary?.licenses ?? myLicenseRequests.length})
         </button>
         <button
           onClick={() => setActiveTab('perfil')}
@@ -1128,7 +1135,7 @@ export default function EmployeeDashboard({
                         if (!date) return <div key={`empty-${idx}`} className="min-h-[76px] rounded-xl bg-slate-50/50" />;
                         const iso = toLocalDateInput(date);
                         const dayLogs = dailyFilteredLogs.filter((log) => log.date === iso);
-                        const approvedLeave = myLicenseRequests.some((request) => request.status === 'aprobado' && request.article !== 'Guardia en Feria' && request.startDate.slice(0, 10) <= iso && request.endDate.slice(0, 10) >= iso);
+                        const approvedLeave = calendarLicensePage.items.some((request) => request.article !== 'Guardia en Feria' && request.startDate.slice(0, 10) <= iso && request.endDate.slice(0, 10) >= iso);
                         const savedMode = dayLogs[0]?.mode;
                         const laborStatus = approvedLeave ? 'Licencia' : iso < todayIso ? (savedMode ? modeLabels[savedMode] || savedMode : 'Sin evidencia') : ({ REMOTE: 'Remoto', PRESENTIAL: 'Presencial', STRIKE: 'Paro', WEEKEND: 'Fin de semana' }[getWorkdayStatus(iso, employee.remoteDaysAssigned, strikeConfig.nextDate)]);
                         const isSelected = selectedCalendarDate === iso;
@@ -1212,7 +1219,7 @@ export default function EmployeeDashboard({
               }
 
               const isAssigned = selectedProj.assignedEmployeeIds.includes(employee.id);
-              const associatedLogs = workLogs.filter(w => w.projectId === selectedProj?.id || (w?.title || '').toLowerCase().trim() === (selectedProj?.name || '').toLowerCase().trim());
+              const associatedLogs = selectedProjectWorkLogsPage.items;
               const adminUpdates = selectedProj.updates || [];
 
               // Sort combined timeline descending
@@ -1528,7 +1535,7 @@ export default function EmployeeDashboard({
                   ) : (
                     projectServerPage.items.map((proj) => {
                       const isAssigned = proj.assignedEmployeeIds.includes(employee.id);
-                      const matchedLogs = workLogs.filter(log => (log.title || '').toLowerCase().trim() === (proj.name || '').toLowerCase().trim());
+                      const matchedLogsCount = proj.workLogsCount ?? 0;
                       const adminUpdatesCount = proj.updates?.length || 0;
                       
                       return (
@@ -1579,7 +1586,7 @@ export default function EmployeeDashboard({
                           <div className="mt-5 pt-3 border-t border-gray-105">
                             <div className="flex items-center justify-between text-[10px] font-bold text-gray-400 mb-3 font-mono">
                               <span className="text-indigo-650 bg-indigo-10s px-1.5 py-0.5 rounded">
-                                {matchedLogs.length} partes diarios equipo
+                                {matchedLogsCount} partes diarios equipo
                               </span>
                               <span className="text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded">
                                 {adminUpdatesCount} directas admin

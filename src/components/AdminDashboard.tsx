@@ -3,7 +3,7 @@ import { statisticsApi } from '../api/statistics.api';
 import { secondaryWorkItemsApi } from '../api/secondaryWorkItems.api';
 import { CreateEmployeePayload, DailyAttendance, Dependency, Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, LicenseArticle, ActivityType, StatisticsResponse, SecondaryWorkItem } from '../types';
 import { activityTypeLabel, deploymentEnvironmentLabel, deploymentStatusLabel, difficultyLabel, licenseStatusLabel, projectStatusLabel, statColumnLabel } from '../utils/labels';
-import { getArgentinaTodayDateOnly } from '../utils/date';
+import { addDaysDateOnly, formatDateOnlyArgentina, getArgentinaTodayDateOnly } from '../utils/date';
 import { 
   Users, Calendar, Briefcase, Plus, Check, X, FileText, 
   User, ShieldAlert, Award, AlertCircle, FilePlus, ChevronRight, Settings, ArrowRight, Trash2, Key, ArrowUpDown,
@@ -15,6 +15,7 @@ import DependencyAdmin from './DependencyAdmin';
 import AdminV2Panel from './AdminV2Panel';
 import AnnouncementAdmin from './AnnouncementAdmin';
 import { currentWorkdayStatus, requiresWorkLog } from '../utils/workday';
+import CertificateDownload from './CertificateDownload';
 
 interface AdminDashboardProps {
   employees: Employee[];
@@ -144,15 +145,14 @@ export default function AdminDashboard({
   const todayStr = getArgentinaTodayDateOnly();
   const nonAdminEmployees = employees.filter(e => !e.isAdmin);
   const agentsWithoutLog = nonAdminEmployees.filter(emp => {
-    return requiresWorkLog(currentWorkdayStatus(emp.remoteDaysAssigned, strikeConfig.nextDate)) && !workLogs.some(log => log.employeeId === emp.id && log.date === todayStr);
+    const onApprovedLeave = licenseRequests.some((request) => request.employeeId === emp.id && request.status === 'aprobado' && request.article !== 'Guardia en Feria' && request.startDate.slice(0, 10) <= todayStr && request.endDate.slice(0, 10) >= todayStr);
+    return !onApprovedLeave && requiresWorkLog(currentWorkdayStatus(emp.remoteDaysAssigned, strikeConfig.nextDate)) && !workLogs.some(log => log.employeeId === emp.id && log.date === todayStr);
   });
   const projectStats = React.useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const in7 = new Date(today.getTime() + 7 * 86400000);
-    const in15 = new Date(today.getTime() + 15 * 86400000);
+    const in7 = formatDateOnlyArgentina(addDaysDateOnly(todayStr, 7));
+    const in15 = formatDateOnlyArgentina(addDaysDateOnly(todayStr, 15));
     const byStatus = (status: Project['status']) => projects.filter((p) => p.status === status).length;
-    const deadlineDate = (project: Project) => project.deadline ? new Date(`${project.deadline}T00:00:00`) : null;
+    const deadlineDate = (project: Project) => project.deadline?.slice(0, 10) || null;
     return {
       total: projects.length,
       inProgress: byStatus('en_desarrollo'),
@@ -162,14 +162,14 @@ export default function AdminDashboard({
       finished: projects.filter((p) => p.status === 'completado' || p.status === 'terminado').length,
       redesign: projects.filter((p) => p.needsRedesign || p.status === 'necesita_rediseno').length,
       rework: projects.filter((p) => p.needsRework || p.status === 'necesita_rehacer').length,
-      overdue: projects.filter((p) => { const d = deadlineDate(p); return d && d < today; }).length,
-      dueToday: projects.filter((p) => { const d = deadlineDate(p); return d && d.getTime() === today.getTime(); }).length,
-      dueThisWeek: projects.filter((p) => { const d = deadlineDate(p); return d && d >= today && d <= in7; }).length,
+      overdue: projects.filter((p) => { const d = deadlineDate(p); return d && d < todayStr; }).length,
+      dueToday: projects.filter((p) => deadlineDate(p) === todayStr).length,
+      dueThisWeek: projects.filter((p) => { const d = deadlineDate(p); return d && d >= todayStr && d <= in7; }).length,
       dueIn15: projects.filter((p) => { const d = deadlineDate(p); return d && d > in7 && d <= in15; }).length,
       withoutDeadline: projects.filter((p) => !p.deadline).length,
       withoutOwner: projects.filter((p) => !p.ownerId).length,
     };
-  }, [projects]);
+  }, [projects, todayStr]);
 
   const activityLabels: Record<ActivityType, string> = {
     PROJECT: 'Proyecto',
@@ -1037,6 +1037,21 @@ export default function AdminDashboard({
         </div>
       </div>
 
+      <section className="mb-8" aria-labelledby="admin-attention-heading">
+        <h3 id="admin-attention-heading" className="mb-3 text-sm font-bold uppercase text-slate-700">Requiere atención</h3>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {[
+            { label: 'Empleados sin parte hoy', count: agentsWithoutLog.length, detail: 'Revisar jornada y enviar recordatorio', tab: 'attendance' as const },
+            { label: 'Licencias pendientes', count: licenseRequests.filter((request) => request.status === 'pendiente').length, detail: 'Resolver solicitudes recibidas', tab: 'attendance' as const },
+            { label: 'Proyectos vencidos', count: projectStats.overdue, detail: 'Revisar deadlines vencidos', tab: 'projects' as const },
+            { label: 'Vencen en 7 días', count: projectStats.dueThisWeek, detail: 'Revisar próximos deadlines', tab: 'projects' as const },
+          ].map((item) => <button key={item.label} type="button" onClick={() => setAdminTab(item.tab)} className="rounded-lg border bg-white p-4 text-left hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-indigo-600">
+            <span className="flex items-center justify-between gap-2 text-sm font-semibold text-slate-800"><span>{item.label}</span><span className="font-mono text-lg">{item.count}</span></span>
+            <span className="mt-1 block text-xs text-slate-500">{item.detail}</span>
+          </button>)}
+        </div>
+      </section>
+
       {/* Alerta de Registro Diario Pendiente para el Administrativo */}
       {agentsWithoutLog.length > 0 && (
         <div className="bg-red-50/80 border border-red-200 p-5 rounded-3xl mb-8 shadow-sm">
@@ -1875,7 +1890,7 @@ export default function AdminDashboard({
 
                               {req.certificateName && (
                                 <div className="mt-2 text-[10px] font-mono text-slate-500 bg-white/40 p-1 rounded inline-block">
-                                   Certificado Adjunto: <span className="font-bold underline text-indigo-700">{req.certificateName}</span>
+                                   Certificado Adjunto: <span className="font-bold text-indigo-700"><CertificateDownload licenseId={req.id} fileName={req.certificateName} /></span>
                                 </div>
                               )}
                             </div>
@@ -2093,7 +2108,7 @@ export default function AdminDashboard({
                                       )}
                                       {req.certificateName && (
                                         <div className="text-[9px] text-slate-500 mt-1 font-mono">
-                                           Certificado: <span className="underline">{req.certificateName}</span>
+                                           Certificado: <CertificateDownload licenseId={req.id} fileName={req.certificateName} />
                                         </div>
                                       )}
                                     </div>

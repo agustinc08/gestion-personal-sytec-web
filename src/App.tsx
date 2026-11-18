@@ -18,7 +18,6 @@ import GlobalSearch from './components/GlobalSearch';
 import HelpPanel from './components/HelpPanel';
 import AnnouncementBanner from './components/AnnouncementBanner';
 import { APP_NAME, APP_UPDATED_AT, APP_VERSION } from './config/app';
-import { DEPENDENCIES, INITIAL_STRIKE_CONFIG, LAWS_ARTICLES_RULES } from './data/mockData';
 import { Announcement, CreateEmployeePayload, DailyAttendance, Dependency, Employee, LicenseArticle, LicenseRequest, LicenseRule, Project, ProjectUpdate, SecondaryWorkItem, StrikeConfig, UpdateEmployeePayload, WorkLog } from './types';
 
 function SessionAvatar({ src, name }: { src?: string; name: string }) {
@@ -81,10 +80,10 @@ export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [secondaryWorkItems, setSecondaryWorkItems] = useState<SecondaryWorkItem[]>([]);
   const [licenseRequests, setLicenseRequests] = useState<LicenseRequest[]>([]);
-  const [licenseRules, setLicenseRules] = useState<LicenseRule[]>(LAWS_ARTICLES_RULES);
+  const [licenseRules, setLicenseRules] = useState<LicenseRule[]>([]);
   const [licenseArticles, setLicenseArticles] = useState<LicenseArticle[]>([]);
-  const [strikeConfig, setStrikeConfig] = useState<StrikeConfig>(INITIAL_STRIKE_CONFIG);
-  const [dependencies, setDependencies] = useState<Dependency[]>(DEPENDENCIES.map((name, index) => ({ id: `legacy-${index}`, name, isActive: true, employeeCount: 0, createdAt: '', updatedAt: '' })));
+  const [strikeConfig, setStrikeConfig] = useState<StrikeConfig>({ nextDate: '', nextCoverEmployeeId: '', lastDate: '', lastCoverEmployeeId: '', notes: '' });
+  const [dependencies, setDependencies] = useState<Dependency[]>([]);
   const [remindedEmpIds, setRemindedEmpIds] = useState<string[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [initialFetchDone, setInitialFetchDone] = useState(false);
@@ -107,8 +106,8 @@ export default function App() {
         isAdmin ? licensesApi.all() : licensesApi.my(),
         isAdmin ? worklogsApi.all() : worklogsApi.my(),
         worklogsApi.attendance(),
-        licensesApi.rules().catch(() => LAWS_ARTICLES_RULES),
-        licensesApi.rules().then(() => licenseArticlesApi.all(isAdmin)).catch(() => []),
+        licensesApi.rules(),
+        licenseArticlesApi.all(isAdmin).catch(() => []),
         strikeApi.config(),
         isAdmin ? dependenciesApi.all() : Promise.resolve([]),
         announcementsApi.active().catch(() => []),

@@ -11,7 +11,7 @@ type Props = {
 };
 
 export function ServerPagination({ page, totalPages, total, pageSize, loading = false, onPageChange, onPageSizeChange }: Props) {
-  if (totalPages <= 1 && !onPageSizeChange) return null;
+  if (totalPages <= 1) return null;
   return <nav aria-label="Paginación" className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4 text-xs text-slate-700 dark:border-slate-700 dark:text-slate-200">
     <span>{total ? `Mostrando ${(page - 1) * pageSize + 1}-${Math.min(page * pageSize, total)} de ${total}` : 'Sin registros'}</span>
     <div className="flex min-w-0 flex-wrap items-center gap-2">

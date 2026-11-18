@@ -1,5 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { statisticsApi } from '../api/statistics.api';
+import { worklogsApi } from '../api/worklogs.api';
+import { projectsApi } from '../api/projects.api';
+import { licensesApi } from '../api/licenses.api';
 import { DailyAttendance, Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, ActivityType, StatisticsResponse, SecondaryWorkItem } from '../types';
 import { activityTypeLabel, deploymentEnvironmentLabel, deploymentStatusLabel, difficultyLabel, licenseStatusLabel, projectStatusLabel } from '../utils/labels';
 import { getArgentinaTodayDateOnly } from '../utils/date';
@@ -13,7 +16,8 @@ import {
 } from 'lucide-react';
 import ProjectComments from './ProjectComments';
 import CertificateDownload from './CertificateDownload';
-import { Pagination, usePagination } from './Pagination';
+import { ServerPagination } from './ServerPagination';
+import { useServerPagination } from '../hooks/useServerPagination';
 
 interface EmployeeDashboardProps {
   employee: Employee;
@@ -285,9 +289,14 @@ export default function EmployeeDashboard({
     (dailyActivityFilter === 'todos' || log.activityType === dailyActivityFilter) &&
     (dailyProjectFilter === 'todos' || log.projectId === dailyProjectFilter)
   ));
-  const dailyPagination = usePagination(dailyFilteredLogs, [dailyYear, dailyMonth, dailyModeFilter, dailyActivityFilter, dailyProjectFilter]);
-  const projectPagination = usePagination(myAssignedProjects);
-  const licensePagination = usePagination(myLicenseRequests);
+  const dailyServerPage = useServerPagination(worklogsApi.myPage, { year: dailyYear, month: dailyMonth, employeeId: employee.id, mode: '', activityType: '', projectId: '' });
+  const projectServerPage = useServerPagination(projectsApi.myPage, {});
+  const licenseServerPage = useServerPagination(licensesApi.myPage, {});
+  useEffect(() => {
+    const refreshPages = () => { dailyServerPage.refresh(); projectServerPage.refresh(); licenseServerPage.refresh(); };
+    window.addEventListener('sytec:refreshed', refreshPages);
+    return () => window.removeEventListener('sytec:refreshed', refreshPages);
+  }, [dailyServerPage.refresh, projectServerPage.refresh, licenseServerPage.refresh]);
   const selectedDayLogs = dailyFilteredLogs.filter((log) => log.date === selectedCalendarDate);
   const calendarYear = Number(dailyYear) || new Date().getFullYear();
   const calendarMonthIndex = (Number(dailyMonth) || new Date().getMonth() + 1) - 1;
@@ -1003,35 +1012,35 @@ export default function EmployeeDashboard({
                   <input
                     type="number"
                     value={dailyYear}
-                    onChange={(e) => setDailyYear(e.target.value)}
+                    onChange={(e) => { setDailyYear(e.target.value); dailyServerPage.setFilter('year', e.target.value); }}
                     className="text-xs border border-slate-200 rounded-xl px-3 py-2"
                     placeholder="Año"
                   />
-                  <select value={dailyMonth} onChange={(e) => setDailyMonth(e.target.value)} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
+                  <select value={dailyMonth} onChange={(e) => { setDailyMonth(e.target.value); dailyServerPage.setFilter('month', e.target.value); }} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
                     {Array.from({ length: 12 }, (_, idx) => <option key={idx + 1} value={idx + 1}>{new Date(2026, idx, 1).toLocaleDateString('es-AR', { month: 'long' })}</option>)}
                   </select>
-                  <select value={dailyModeFilter} onChange={(e) => setDailyModeFilter(e.target.value)} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
+                  <select value={dailyModeFilter} onChange={(e) => { const value = e.target.value; setDailyModeFilter(value); dailyServerPage.setFilter('mode', value === 'todos' ? '' : value); }} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
                     <option value="todos">Modalidad</option>
                     <option value="presencial">Presencial</option>
                     <option value="remoto">Remoto</option>
                     <option value="mixto">Mixto</option>
                     <option value="licencia">Licencia</option>
                   </select>
-                  <select value={dailyActivityFilter} onChange={(e) => setDailyActivityFilter(e.target.value)} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
+                  <select value={dailyActivityFilter} onChange={(e) => { const value = e.target.value; setDailyActivityFilter(value); dailyServerPage.setFilter('activityType', value === 'todos' ? '' : value); }} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
                     <option value="todos">Actividad</option>
                     {Object.entries(activityLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
                   </select>
-                  <select value={dailyProjectFilter} onChange={(e) => setDailyProjectFilter(e.target.value)} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
+                  <select value={dailyProjectFilter} onChange={(e) => { const value = e.target.value; setDailyProjectFilter(value); dailyServerPage.setFilter('projectId', value === 'todos' ? '' : value); }} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
                     <option value="todos">Proyecto</option>
                     {myAssignedProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
                   </select>
                 </div>
                 <span className="inline-flex text-xs bg-slate-100 text-slate-600 font-semibold px-2 py-1 rounded">
-                  {dailyFilteredLogs.length} Entradas filtradas
+                  {dailyServerPage.total} Entradas filtradas
                 </span>
               </div>
 
-              {dailyView === 'list' && (dailyFilteredLogs.length === 0 ? (
+              {dailyView === 'list' && (dailyServerPage.loading ? <p role="status" className="py-4 text-center text-xs text-slate-500">Cargando partes...</p> : dailyServerPage.error ? <p role="alert" className="rounded-lg bg-rose-50 p-4 text-center text-xs text-rose-800">{dailyServerPage.error}</p> : dailyServerPage.total === 0 ? (
                 <div className="bg-white p-12 text-center rounded-2xl border border-dashed border-gray-250">
                   <Clock className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                   <p className="text-gray-500 text-sm">Sin registros para este mes.</p>
@@ -1039,7 +1048,7 @@ export default function EmployeeDashboard({
                 </div>
               ) : (
                 <div className="space-y-4 max-h-[550px] overflow-y-auto pr-2">
-                  {dailyPagination.rows.map((log) => {
+                  {dailyServerPage.items.map((log) => {
                     const linkedProject = projects.find(p => p.id === log.projectId || (p.name || '').toLowerCase().trim() === (log.title || '').toLowerCase().trim());
                     const isSyncedProject = !!linkedProject;
                     const linkedSecondary = secondaryWorkItems.find((item) => item.id === log.secondaryWorkItemId);
@@ -1089,7 +1098,7 @@ export default function EmployeeDashboard({
                       </div>
                     );
                   })}
-                  <Pagination {...dailyPagination} />
+                  <ServerPagination page={dailyServerPage.page} totalPages={dailyServerPage.totalPages} total={dailyServerPage.total} pageSize={dailyServerPage.pageSize} loading={dailyServerPage.loading} onPageChange={dailyServerPage.setPage} onPageSizeChange={dailyServerPage.setPageSize} />
                 </div>
               ))}
 
@@ -1511,13 +1520,13 @@ export default function EmployeeDashboard({
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {myAssignedProjects.length === 0 ? (
+                  {projectServerPage.loading ? <p role="status" className="col-span-full py-5 text-center text-xs text-slate-500">Cargando proyectos...</p> : projectServerPage.error ? <p role="alert" className="col-span-full rounded-lg bg-rose-50 p-4 text-center text-xs text-rose-800">{projectServerPage.error}</p> : projectServerPage.total === 0 ? (
                     <div className="col-span-2 text-center py-12 bg-white rounded-2xl border">
                       <Briefcase className="w-12 h-12 text-gray-300 mx-auto mb-2" />
                       <p className="text-gray-500">No hay proyectos activos registrados.</p>
                     </div>
                   ) : (
-                    projectPagination.rows.map((proj) => {
+                    projectServerPage.items.map((proj) => {
                       const isAssigned = proj.assignedEmployeeIds.includes(employee.id);
                       const matchedLogs = workLogs.filter(log => (log.title || '').toLowerCase().trim() === (proj.name || '').toLowerCase().trim());
                       const adminUpdatesCount = proj.updates?.length || 0;
@@ -1589,7 +1598,7 @@ export default function EmployeeDashboard({
                     })
                   )}
                 </div>
-                <Pagination {...projectPagination} />
+                <ServerPagination page={projectServerPage.page} totalPages={projectServerPage.totalPages} total={projectServerPage.total} pageSize={projectServerPage.pageSize} loading={projectServerPage.loading} onPageChange={projectServerPage.setPage} onPageSizeChange={projectServerPage.setPageSize} />
               </>
             )}
           </div>
@@ -1822,14 +1831,14 @@ export default function EmployeeDashboard({
             <div className="lg:col-span-7 space-y-4">
               <h3 className="text-lg font-bold text-gray-900">Estado de mis Solicitudes</h3>
 
-              {myLicenseRequests.length === 0 ? (
+              {licenseServerPage.loading ? <p role="status" className="py-5 text-center text-xs text-slate-500">Cargando licencias...</p> : licenseServerPage.error ? <p role="alert" className="rounded-lg bg-rose-50 p-4 text-center text-xs text-rose-800">{licenseServerPage.error}</p> : licenseServerPage.total === 0 ? (
                 <div className="bg-white p-12 text-center rounded-2xl border">
                   <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                   <p className="text-gray-500 text-sm">No has realizado ninguna solicitud de licencia aún.</p>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {licensePagination.rows.map((req) => (
+                  {licenseServerPage.items.map((req) => (
                     <div 
                       key={req.id} 
                       className="bg-white p-4 rounded-xl border border-gray-150 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4"
@@ -1869,7 +1878,7 @@ export default function EmployeeDashboard({
                       </div>
                     </div>
                   ))}
-                  <Pagination {...licensePagination} />
+                  <ServerPagination page={licenseServerPage.page} totalPages={licenseServerPage.totalPages} total={licenseServerPage.total} pageSize={licenseServerPage.pageSize} loading={licenseServerPage.loading} onPageChange={licenseServerPage.setPage} onPageSizeChange={licenseServerPage.setPageSize} />
                 </div>
               )}
             </div>

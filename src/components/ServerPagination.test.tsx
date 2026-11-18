@@ -15,7 +15,7 @@ describe('ServerPagination', () => {
   });
 
   it('does not show navigation for a single page', () => {
-    render(<ServerPagination page={1} totalPages={1} total={3} pageSize={25} onPageChange={vi.fn()} />);
+    render(<ServerPagination page={1} totalPages={1} total={3} pageSize={25} onPageChange={vi.fn()} onPageSizeChange={vi.fn()} />);
     expect(screen.queryByRole('navigation', { name: 'Paginación' })).toBeNull();
   });
 });

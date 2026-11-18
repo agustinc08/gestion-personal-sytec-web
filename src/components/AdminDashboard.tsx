@@ -1,6 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { statisticsApi } from '../api/statistics.api';
 import { secondaryWorkItemsApi } from '../api/secondaryWorkItems.api';
+import { employeesApi } from '../api/employees.api';
+import { projectsApi } from '../api/projects.api';
+import { worklogsApi } from '../api/worklogs.api';
+import { licensesApi } from '../api/licenses.api';
 import { CreateEmployeePayload, DailyAttendance, Dependency, Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, LicenseArticle, ActivityType, StatisticsResponse, SecondaryWorkItem } from '../types';
 import { activityTypeLabel, deploymentEnvironmentLabel, deploymentStatusLabel, difficultyLabel, licenseStatusLabel, projectStatusLabel, statColumnLabel } from '../utils/labels';
 import { projectLifecycle } from '../utils/project-lifecycle';
@@ -12,6 +16,8 @@ import {
 } from 'lucide-react';
 import ProjectComments from './ProjectComments';
 import { Pagination, usePagination } from './Pagination';
+import { ServerPagination } from './ServerPagination';
+import { useServerPagination } from '../hooks/useServerPagination';
 import DependencyAdmin from './DependencyAdmin';
 import AdminV2Panel from './AdminV2Panel';
 import AnnouncementAdmin from './AnnouncementAdmin';
@@ -199,6 +205,7 @@ export default function AdminDashboard({
   // Selected employee detail state
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(employees[0]?.id || null);
   const [employeeDependencyFilter, setEmployeeDependencyFilter] = useState('todas');
+  const employeeServerPage = useServerPagination(employeesApi.page, { q: '', dependencyId: '' });
 
   // Selected project for detail view state
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -234,6 +241,10 @@ export default function AdminDashboard({
   const [projectDeadlineFilter, setProjectDeadlineFilter] = useState('todos');
   const [projectRedesignFilter, setProjectRedesignFilter] = useState('todos');
   const [projectReworkFilter, setProjectReworkFilter] = useState('todos');
+  const [projectSearchQuery, setProjectSearchQuery] = useState('');
+  const projectServerPage = useServerPagination(projectsApi.page, {
+    q: '', lifecycle: '', year: '', difficulty: '', status: '', ownerId: '', deadlineStatus: '', needsRedesign: '', needsRework: '',
+  });
   const [statsYear, setStatsYear] = useState(String(new Date().getFullYear()));
   const [statsMonth, setStatsMonth] = useState('todos');
   const [statsEmployeeId, setStatsEmployeeId] = useState('todos');
@@ -252,6 +263,8 @@ export default function AdminDashboard({
   const [adminWorkLogMode, setAdminWorkLogMode] = useState('todos');
   const [adminWorkLogActivityType, setAdminWorkLogActivityType] = useState('todos');
   const [adminWorkLogProjectId, setAdminWorkLogProjectId] = useState('todos');
+  const workLogServerPage = useServerPagination(worklogsApi.page, { year: adminWorkLogYear, month: adminWorkLogMonth, employeeId: '', mode: '', activityType: '', projectId: '' });
+  const attendanceServerPage = useServerPagination(worklogsApi.attendancePage, { year: adminWorkLogYear, month: adminWorkLogMonth, employeeId: '' });
 
   useEffect(() => {
     if (adminTab !== 'statistics') return;
@@ -352,6 +365,23 @@ export default function AdminDashboard({
   // States for general license list searching and filtering
   const [licenseSearchQuery, setLicenseSearchQuery] = useState('');
   const [licenseStatusFilter, setLicenseStatusFilter] = useState<'todos' | 'pendiente' | 'aprobado' | 'rechazado'>('todos');
+  const licenseServerPage = useServerPagination(licensesApi.page, { q: '', status: '', employeeId: '', from: '', to: '' });
+  const [secondarySearchQuery, setSecondarySearchQuery] = useState('');
+  const [secondaryStatusFilter, setSecondaryStatusFilter] = useState('');
+  const secondaryServerPage = useServerPagination(secondaryWorkItemsApi.page, { q: '', status: '' });
+
+  React.useEffect(() => {
+    const refreshLists = () => {
+      employeeServerPage.refresh();
+      projectServerPage.refresh();
+      workLogServerPage.refresh();
+      attendanceServerPage.refresh();
+      licenseServerPage.refresh();
+      secondaryServerPage.refresh();
+    };
+    window.addEventListener('sytec:refreshed', refreshLists);
+    return () => window.removeEventListener('sytec:refreshed', refreshLists);
+  }, [employeeServerPage.refresh, projectServerPage.refresh, workLogServerPage.refresh, attendanceServerPage.refresh, licenseServerPage.refresh, secondaryServerPage.refresh]);
 
   React.useEffect(() => {
     if (currentAdmin) {
@@ -559,39 +589,9 @@ export default function AdminDashboard({
   const selectedEmpLicenses = selectedEmp 
     ? licenseRequests.filter(req => req.employeeId === selectedEmp.id).sort((a,b) => b.dateRequested.localeCompare(a.dateRequested))
     : [];
-  const adminFilteredWorkLogs = workLogs.filter((log) => (
-    String(new Date(`${log.date}T00:00:00`).getFullYear()) === adminWorkLogYear &&
-    String(new Date(`${log.date}T00:00:00`).getMonth() + 1) === adminWorkLogMonth &&
-    (adminWorkLogEmployeeId === 'todos' || log.employeeId === adminWorkLogEmployeeId) &&
-    (adminWorkLogMode === 'todos' || log.mode === adminWorkLogMode) &&
-    (adminWorkLogActivityType === 'todos' || log.activityType === adminWorkLogActivityType) &&
-    (adminWorkLogProjectId === 'todos' || log.projectId === adminWorkLogProjectId)
-  )).sort((a, b) => b.date.localeCompare(a.date));
-  const adminFilteredProjects = projects.filter((proj) => (
-    (projectYearFilter === 'todos' || String(proj.year) === projectYearFilter) &&
-    (projectDifficultyFilter === 'todos' || proj.difficulty === projectDifficultyFilter) &&
-    (projectStatusFilter === 'todos' || proj.status === projectStatusFilter) &&
-    (projectLifecycleFilter === 'todos' || projectLifecycle(proj.status) === projectLifecycleFilter) &&
-    (projectOwnerFilter === 'todos' || (projectOwnerFilter === 'sin_responsable' ? !proj.ownerId : proj.ownerId === projectOwnerFilter)) &&
-    (projectDeadlineFilter === 'todos' || proj.deadlineStatus === projectDeadlineFilter) &&
-    (projectRedesignFilter === 'todos' || String(!!proj.needsRedesign || proj.status === 'necesita_rediseno') === projectRedesignFilter) &&
-    (projectReworkFilter === 'todos' || String(!!proj.needsRework || proj.status === 'necesita_rehacer') === projectReworkFilter)
-  )).sort((a, b) => String(b.lastActivityAt || b.updatedAt || '').localeCompare(String(a.lastActivityAt || a.updatedAt || '')));
-  const sortedSecondaryWorkItems = [...secondaryWorkItems].sort((a, b) => String(b.lastActivityAt || b.updatedAt || '').localeCompare(String(a.lastActivityAt || a.updatedAt || '')));
   const selectedSecondaryWorkItem = selectedSecondaryWorkItemId ? secondaryWorkItems.find((item) => item.id === selectedSecondaryWorkItemId) : null;
   const selectedSecondaryLogs = selectedSecondaryWorkItemId ? workLogs.filter((log) => log.secondaryWorkItemId === selectedSecondaryWorkItemId).sort((a, b) => b.date.localeCompare(a.date)) : [];
-  const adminFilteredLicenses = licenseRequests.filter((req) => {
-    const sender = employees.find((employee) => employee.id === req.employeeId);
-    const query = licenseSearchQuery.toLowerCase();
-    const queryMatch = !!sender && (sender.name.toLowerCase().includes(query) || sender.dependency.toLowerCase().includes(query)) || req.article.toLowerCase().includes(query) || req.reason.toLowerCase().includes(query);
-    return queryMatch && (licenseStatusFilter === 'todos' || req.status === licenseStatusFilter);
-  }).sort((a, b) => b.startDate.localeCompare(a.startDate));
-  const filteredEmployees = employees.filter((employee) => employeeDependencyFilter === 'todas' || employee.dependencyId === employeeDependencyFilter);
-  const employeePagination = usePagination(filteredEmployees, [employeeDependencyFilter]);
   const userPagination = usePagination(employees);
-  const workLogPagination = usePagination(adminFilteredWorkLogs, [adminWorkLogYear, adminWorkLogMonth, adminWorkLogEmployeeId, adminWorkLogMode, adminWorkLogActivityType, adminWorkLogProjectId]);
-  const projectPagination = usePagination(adminFilteredProjects, [projectYearFilter, projectDifficultyFilter, projectStatusFilter, projectLifecycleFilter, projectOwnerFilter, projectDeadlineFilter, projectRedesignFilter, projectReworkFilter]);
-  const licensePagination = usePagination(adminFilteredLicenses, [licenseSearchQuery, licenseStatusFilter]);
 
   const resetProjectForm = () => {
     setProjName('');
@@ -1229,13 +1229,14 @@ export default function AdminDashboard({
             <div className="lg:col-span-6 space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-lg font-bold text-slate-900">Listado de Plantilla</h3>
-                <select value={employeeDependencyFilter} onChange={(event) => setEmployeeDependencyFilter(event.target.value)} className="rounded-xl border bg-white px-3 py-2 text-xs">
+                <select value={employeeDependencyFilter} onChange={(event) => { const value = event.target.value; setEmployeeDependencyFilter(value); employeeServerPage.setFilter('dependencyId', value === 'todas' ? '' : value); }} className="rounded-xl border bg-white px-3 py-2 text-xs">
                   <option value="todas">Todas las dependencias</option>
                   {dependencies.map((dependency) => <option key={dependency.id} value={dependency.id}>{dependency.name}</option>)}
                 </select>
               </div>
+              <input aria-label="Buscar empleados" placeholder="Buscar nombre, CUIL, correo o dependencia" value={employeeServerPage.filters.q} onChange={(event) => employeeServerPage.setFilter('q', event.target.value)} className="w-full rounded-xl border bg-white px-3 py-2 text-xs" />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[600px] overflow-y-auto pr-1">
-                {employeePagination.rows.map((emp) => {
+                {employeeServerPage.items.map((emp) => {
                   const isSelected = emp.id === selectedEmployeeId;
                   const remaining = getRemainingDays(emp);
                   return (
@@ -1281,8 +1282,11 @@ export default function AdminDashboard({
                     </div>
                   );
                 })}
+                {employeeServerPage.loading && <p role="status" className="col-span-full py-4 text-center text-xs text-slate-500">Cargando empleados...</p>}
+                {!employeeServerPage.loading && employeeServerPage.error && <p role="alert" className="col-span-full rounded-lg bg-rose-50 p-4 text-center text-xs text-rose-800">{employeeServerPage.error}</p>}
+                {!employeeServerPage.loading && !employeeServerPage.error && employeeServerPage.total === 0 && <p className="col-span-full rounded-lg border border-dashed p-6 text-center text-xs text-slate-500">No se encontraron empleados para estos filtros.</p>}
               </div>
-              <Pagination {...employeePagination} />
+              <ServerPagination page={employeeServerPage.page} totalPages={employeeServerPage.totalPages} total={employeeServerPage.total} pageSize={employeeServerPage.pageSize} loading={employeeServerPage.loading} onPageChange={employeeServerPage.setPage} onPageSizeChange={employeeServerPage.setPageSize} />
             </div>
 
             {/* Right Col: Selected Employee detailed info, logs and licenses */}
@@ -1931,9 +1935,9 @@ export default function AdminDashboard({
                       <FileText className="w-5 h-5 text-indigo-600" /> Registro de Licencias Solicitadas
                     </span>
                     <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-150 px-2.5 py-0.5 rounded-full font-bold">
-                      {licenseRequests.length} Registros
+                      {licenseServerPage.total} Registros
                     </span>
-                    {onClearLicenses && licenseRequests.length > 0 && (
+                    {onClearLicenses && licenseServerPage.total > 0 && (
                       <button
                         type="button"
                         onClick={() => setConfirmDialog({
@@ -1963,14 +1967,14 @@ export default function AdminDashboard({
                       type="text"
                       placeholder="Buscar por agente, artículo o motivo..."
                       value={licenseSearchQuery}
-                      onChange={(e) => setLicenseSearchQuery(e.target.value)}
+                      onChange={(e) => { setLicenseSearchQuery(e.target.value); licenseServerPage.setFilter('q', e.target.value); }}
                       className="w-full text-xs h-9 bg-slate-50 border border-gray-300 rounded-xl px-3 text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-550 focus:border-indigo-550 placeholder-slate-400"
                     />
                   </div>
                   <div className="sm:w-44">
                     <select
                       value={licenseStatusFilter}
-                      onChange={(e) => setLicenseStatusFilter(e.target.value as any)}
+                      onChange={(e) => { const value = e.target.value as any; setLicenseStatusFilter(value); licenseServerPage.setFilter('status', value === 'todos' ? '' : value); }}
                       className="w-full text-xs h-9 bg-white border border-gray-300 rounded-xl px-2.5 text-slate-700 focus:outline-none cursor-pointer font-medium"
                     >
                       <option value="todos">Todos los estados</option>
@@ -1983,12 +1987,14 @@ export default function AdminDashboard({
 
                 {/* Listado de Solicitudes */}
                 <div className="space-y-3 max-h-[560px] overflow-y-auto pr-1">
-                  {licensePagination.total === 0 ? (
+                  {licenseServerPage.loading && <p role="status" className="py-5 text-center text-xs text-slate-500">Cargando licencias...</p>}
+                  {!licenseServerPage.loading && licenseServerPage.error && <p role="alert" className="rounded-lg bg-rose-50 p-4 text-center text-xs text-rose-800">{licenseServerPage.error}</p>}
+                  {!licenseServerPage.loading && !licenseServerPage.error && licenseServerPage.total === 0 ? (
                       <div className="text-center py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-400 text-xs italic font-sans animate-fade-in">
                         No se encontraron registros de licencias que coincidan con los filtros aplicados.
                       </div>
-                    ) : (
-                      licensePagination.rows.map((req) => {
+                    ) : !licenseServerPage.loading && !licenseServerPage.error && (
+                      licenseServerPage.items.map((req) => {
                           const sender = employees.find((e) => e.id === req.employeeId);
                           const isEditingThisLic = editingLicenseId === req.id;
 
@@ -2172,7 +2178,7 @@ export default function AdminDashboard({
                         })
                     )}
                 </div>
-                <Pagination {...licensePagination} />
+                <ServerPagination page={licenseServerPage.page} totalPages={licenseServerPage.totalPages} total={licenseServerPage.total} pageSize={licenseServerPage.pageSize} loading={licenseServerPage.loading} onPageChange={licenseServerPage.setPage} onPageSizeChange={licenseServerPage.setPageSize} />
               </div>
 
               {/* Box 2: Chronological general logs list of attendance */}
@@ -2182,35 +2188,36 @@ export default function AdminDashboard({
                   <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded">Fichadas</span>
                 </h3>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
-                  <input type="number" value={adminWorkLogYear} onChange={(e) => setAdminWorkLogYear(e.target.value)} className="text-xs border border-slate-200 rounded-xl px-3 py-2" placeholder="Año" />
-                  <select value={adminWorkLogMonth} onChange={(e) => setAdminWorkLogMonth(e.target.value)} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
+                  <select value={adminWorkLogMonth} onChange={(e) => { const value = e.target.value; setAdminWorkLogMonth(value); workLogServerPage.setFilter('month', value); attendanceServerPage.setFilter('month', value); }} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
                     {Array.from({ length: 12 }, (_, idx) => <option key={idx + 1} value={idx + 1}>{new Date(2026, idx, 1).toLocaleDateString('es-AR', { month: 'long' })}</option>)}
                   </select>
-                  <select value={adminWorkLogEmployeeId} onChange={(e) => setAdminWorkLogEmployeeId(e.target.value)} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
+                  <select value={adminWorkLogEmployeeId} onChange={(e) => { const value = e.target.value; setAdminWorkLogEmployeeId(value); workLogServerPage.setFilter('employeeId', value === 'todos' ? '' : value); attendanceServerPage.setFilter('employeeId', value === 'todos' ? '' : value); }} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
                     <option value="todos">Empleado</option>
                     {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
                   </select>
-                  <select value={adminWorkLogMode} onChange={(e) => setAdminWorkLogMode(e.target.value)} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
+                  <select value={adminWorkLogMode} onChange={(e) => { const value = e.target.value; setAdminWorkLogMode(value); workLogServerPage.setFilter('mode', value === 'todos' ? '' : value); }} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
                     <option value="todos">Modalidad</option>
                     <option value="presencial">Presencial</option>
                     <option value="remoto">Remoto</option>
                     <option value="mixto">Mixto</option>
                     <option value="licencia">Licencia</option>
                   </select>
-                  <select value={adminWorkLogActivityType} onChange={(e) => setAdminWorkLogActivityType(e.target.value)} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
+                  <select value={adminWorkLogActivityType} onChange={(e) => { const value = e.target.value; setAdminWorkLogActivityType(value); workLogServerPage.setFilter('activityType', value === 'todos' ? '' : value); }} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
                     <option value="todos">Actividad</option>
                     {Object.entries(activityLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
                   </select>
-                  <select value={adminWorkLogProjectId} onChange={(e) => setAdminWorkLogProjectId(e.target.value)} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
+                  <select value={adminWorkLogProjectId} onChange={(e) => { const value = e.target.value; setAdminWorkLogProjectId(value); workLogServerPage.setFilter('projectId', value === 'todos' ? '' : value); }} className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white">
                     <option value="todos">Proyecto</option>
                     {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
                   </select>
                 </div>
 
                 <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
-                  {adminFilteredWorkLogs.length === 0 ? (
+                  {workLogServerPage.loading && <p role="status" className="py-3 text-center text-xs text-slate-500">Cargando partes...</p>}
+                  {!workLogServerPage.loading && workLogServerPage.error && <p role="alert" className="rounded-lg bg-rose-50 p-4 text-center text-xs text-rose-800">{workLogServerPage.error}</p>}
+                  {!workLogServerPage.loading && !workLogServerPage.error && workLogServerPage.total === 0 ? (
                     <div className="border border-dashed border-slate-200 rounded-xl p-6 text-center text-sm text-slate-500">Sin registros para este mes.</div>
-                  ) : workLogPagination.rows.map((log) => {
+                  ) : !workLogServerPage.loading && !workLogServerPage.error && workLogServerPage.items.map((log) => {
                     const emp = employees.find(e => e.id === log.employeeId);
                     const linkedProject = projects.find((project) => project.id === log.projectId);
                     return (
@@ -2254,7 +2261,15 @@ export default function AdminDashboard({
                     );
                   })}
                 </div>
-                <Pagination {...workLogPagination} />
+                <ServerPagination page={workLogServerPage.page} totalPages={workLogServerPage.totalPages} total={workLogServerPage.total} pageSize={workLogServerPage.pageSize} loading={workLogServerPage.loading} onPageChange={workLogServerPage.setPage} onPageSizeChange={workLogServerPage.setPageSize} />
+                <section className="mt-6 border-t pt-4">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h4 className="font-bold text-sm text-slate-900">Fichadas registradas</h4><span className="text-xs text-slate-500">{attendanceServerPage.total} registros</span></div>
+                  {attendanceServerPage.loading && <p role="status" className="py-3 text-center text-xs text-slate-500">Cargando fichadas...</p>}
+                  {!attendanceServerPage.loading && attendanceServerPage.error && <p role="alert" className="rounded-lg bg-rose-50 p-4 text-center text-xs text-rose-800">{attendanceServerPage.error}</p>}
+                  {!attendanceServerPage.loading && !attendanceServerPage.error && attendanceServerPage.total === 0 && <p className="rounded-xl border border-dashed p-5 text-center text-xs text-slate-500">No hay fichadas para este período y filtros.</p>}
+                  {!attendanceServerPage.loading && !attendanceServerPage.error && <div className="space-y-2">{attendanceServerPage.items.map((attendance) => { const employee = employees.find((row) => row.id === attendance.employeeId); return <article key={attendance.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-slate-50 p-3 text-xs"><span className="font-semibold">{employee?.name || 'Empleado'}</span><span className="text-slate-500">{String(attendance.date).slice(0, 10)}</span><span className="font-mono">{attendance.entryTime || '--:--'} a {attendance.exitTime || '--:--'}</span></article>; })}</div>}
+                  <ServerPagination page={attendanceServerPage.page} totalPages={attendanceServerPage.totalPages} total={attendanceServerPage.total} pageSize={attendanceServerPage.pageSize} loading={attendanceServerPage.loading} onPageChange={attendanceServerPage.setPage} onPageSizeChange={attendanceServerPage.setPageSize} />
+                </section>
               </div>
             </div>
 
@@ -3047,24 +3062,25 @@ export default function AdminDashboard({
                 <div className="lg:col-span-7 space-y-4 animate-fade-in">
                   <h3 className="text-lg font-bold text-slate-900">Proyectos de la Organización</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 bg-white border border-gray-150 rounded-xl p-3">
-                    <select aria-label="Ciclo de vida del proyecto" value={projectLifecycleFilter} onChange={(e) => setProjectLifecycleFilter(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
+                    <input aria-label="Buscar proyectos" placeholder="Buscar proyecto..." value={projectSearchQuery} onChange={(e) => { setProjectSearchQuery(e.target.value); projectServerPage.setFilter('q', e.target.value); }} className="text-xs border border-gray-200 rounded-lg px-2 py-2" />
+                    <select aria-label="Ciclo de vida del proyecto" value={projectLifecycleFilter} onChange={(e) => { const value = e.target.value; setProjectLifecycleFilter(value); projectServerPage.setFilter('lifecycle', value === 'todos' ? '' : value); }} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
                       <option value="todos">Todos los ciclos</option>
                       <option value="active">Activos</option>
                       <option value="completed">Finalizados</option>
                       <option value="archived">Archivados</option>
                     </select>
-                    <select value={projectYearFilter} onChange={(e) => setProjectYearFilter(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
+                    <select value={projectYearFilter} onChange={(e) => { const value = e.target.value; setProjectYearFilter(value); projectServerPage.setFilter('year', value === 'todos' ? '' : value); }} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
                       <option value="todos">Todos los años</option>
                       {Array.from(new Set(projects.map((p) => p.year).filter(Boolean))).map((year) => <option key={year} value={year}>{year}</option>)}
                     </select>
-                    <select value={projectDifficultyFilter} onChange={(e) => setProjectDifficultyFilter(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
+                    <select value={projectDifficultyFilter} onChange={(e) => { const value = e.target.value; setProjectDifficultyFilter(value); projectServerPage.setFilter('difficulty', value === 'todos' ? '' : value); }} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
                       <option value="todos">Todas las dificultades</option>
                       <option value="LOW">Baja</option>
                       <option value="MEDIUM">Media</option>
                       <option value="HIGH">Alta</option>
                       <option value="CRITICAL">Crítica</option>
                     </select>
-                    <select value={projectStatusFilter} onChange={(e) => setProjectStatusFilter(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
+                    <select value={projectStatusFilter} onChange={(e) => { const value = e.target.value; setProjectStatusFilter(value); projectServerPage.setFilter('status', value === 'todos' ? '' : value); }} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
                       <option value="todos">Todos los estados</option>
                       <option value="vigente">Vigente</option>
                       <option value="en_desarrollo">En desarrollo</option>
@@ -3077,12 +3093,12 @@ export default function AdminDashboard({
                       <option value="pausado">Pausado</option>
                       <option value="completado">Completado</option>
                     </select>
-                    <select value={projectOwnerFilter} onChange={(e) => setProjectOwnerFilter(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
+                    <select value={projectOwnerFilter} onChange={(e) => { const value = e.target.value; setProjectOwnerFilter(value); projectServerPage.setFilter('ownerId', value === 'todos' ? '' : value === 'sin_responsable' ? 'none' : value); }} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
                       <option value="todos">Todos los responsables</option>
                       <option value="sin_responsable">Sin responsable</option>
                       {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
                     </select>
-                    <select value={projectDeadlineFilter} onChange={(e) => setProjectDeadlineFilter(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
+                    <select value={projectDeadlineFilter} onChange={(e) => { const value = e.target.value; setProjectDeadlineFilter(value); projectServerPage.setFilter('deadlineStatus', value === 'todos' ? '' : value); }} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
                       <option value="todos">Todos los vencimientos</option>
                       <option value="vencido">Vencidos</option>
                       <option value="vence_hoy">Vencen hoy</option>
@@ -3090,27 +3106,29 @@ export default function AdminDashboard({
                       <option value="proximo">Próximos</option>
                       <option value="sin_fecha">Sin fecha</option>
                     </select>
-                    <select value={projectRedesignFilter} onChange={(e) => setProjectRedesignFilter(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
+                    <select value={projectRedesignFilter} onChange={(e) => { const value = e.target.value; setProjectRedesignFilter(value); projectServerPage.setFilter('needsRedesign', value === 'todos' ? '' : value); }} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
                       <option value="todos">Rediseno: todos</option>
                       <option value="true">Necesita rediseño</option>
                       <option value="false">No necesita rediseño</option>
                     </select>
-                    <select value={projectReworkFilter} onChange={(e) => setProjectReworkFilter(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
+                    <select value={projectReworkFilter} onChange={(e) => { const value = e.target.value; setProjectReworkFilter(value); projectServerPage.setFilter('needsRework', value === 'todos' ? '' : value); }} className="text-xs border border-gray-200 rounded-lg px-2 py-2">
                       <option value="todos">Rehacer: todos</option>
                       <option value="true">Necesita rehacer</option>
                       <option value="false">No necesita rehacer</option>
                     </select>
                   </div>
 
-                  {projects.length === 0 ? (
+                  {projectServerPage.loading && <p role="status" className="py-4 text-center text-xs text-slate-500">Cargando proyectos...</p>}
+                  {!projectServerPage.loading && projectServerPage.error && <p role="alert" className="rounded-lg bg-rose-50 p-4 text-center text-xs text-rose-800">{projectServerPage.error}</p>}
+                  {!projectServerPage.loading && !projectServerPage.error && projectServerPage.total === 0 ? (
                     <div className="bg-white p-12 text-center rounded-2xl border text-slate-400">
                       <Briefcase className="w-12 h-12 mx-auto mb-2" />
-                      <p className="text-sm">No has publicado ningún proyecto aún.</p>
+                      <p className="text-sm">No se encontraron proyectos para estos filtros.</p>
                     </div>
-                  ) : (
+                  ) : !projectServerPage.loading && !projectServerPage.error && (
                     <>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {projectPagination.rows.map((proj) => {
+                      {projectServerPage.items.map((proj) => {
                         const associatedLogs = workLogs.filter(w => w.projectId === proj.id || (w?.title || '').toLowerCase().trim() === (proj?.name || '').toLowerCase().trim());
                         const adminUpdatesCount = proj.updates?.length || 0;
                         return (
@@ -3191,7 +3209,7 @@ export default function AdminDashboard({
                         );
                       })}
                     </div>
-                    <Pagination {...projectPagination} />
+                    <ServerPagination page={projectServerPage.page} totalPages={projectServerPage.totalPages} total={projectServerPage.total} pageSize={projectServerPage.pageSize} loading={projectServerPage.loading} onPageChange={projectServerPage.setPage} onPageSizeChange={projectServerPage.setPageSize} />
 
                     <section className="mt-6 rounded-2xl border border-amber-100 bg-amber-50/40 p-4">
                       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -3199,10 +3217,13 @@ export default function AdminDashboard({
                           <h3 className="text-lg font-black text-slate-900">Cargas secundarias / Soportes diarios</h3>
                           <p className="text-xs text-slate-500">Tareas cortas nacidas desde partes diarios, separadas de los proyectos formales.</p>
                         </div>
-                        <span className="rounded-full bg-white px-3 py-1 text-[10px] font-black text-amber-700">{sortedSecondaryWorkItems.length} cargas</span>
+                        <span className="rounded-full bg-white px-3 py-1 text-[10px] font-black text-amber-700">{secondaryServerPage.total} cargas</span>
                       </div>
-                      {sortedSecondaryWorkItems.length === 0 ? <p className="rounded-xl border border-dashed border-amber-200 bg-white/70 p-6 text-center text-xs text-slate-400">Todavía no hay cargas secundarias registradas.</p> : <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-                        {sortedSecondaryWorkItems.map((item) => {
+                      <div className="mb-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_12rem]"><input aria-label="Buscar cargas secundarias" placeholder="Buscar carga..." value={secondarySearchQuery} onChange={(event) => { setSecondarySearchQuery(event.target.value); secondaryServerPage.setFilter('q', event.target.value); }} className="rounded-lg border bg-white px-3 py-2 text-xs" /><select aria-label="Estado de cargas secundarias" value={secondaryStatusFilter} onChange={(event) => { setSecondaryStatusFilter(event.target.value); secondaryServerPage.setFilter('status', event.target.value); }} className="rounded-lg border bg-white px-3 py-2 text-xs"><option value="">Todos los estados</option><option value="ACTIVE">Activas</option><option value="ARCHIVED">Archivadas</option></select></div>
+                      {secondaryServerPage.loading && <p role="status" className="py-4 text-center text-xs text-slate-500">Cargando cargas secundarias...</p>}
+                      {!secondaryServerPage.loading && secondaryServerPage.error && <p role="alert" className="rounded-lg bg-rose-50 p-4 text-center text-xs text-rose-800">{secondaryServerPage.error}</p>}
+                      {!secondaryServerPage.loading && !secondaryServerPage.error && secondaryServerPage.total === 0 ? <p className="rounded-xl border border-dashed border-amber-200 bg-white/70 p-6 text-center text-xs text-slate-400">No se encontraron cargas secundarias para estos filtros.</p> : !secondaryServerPage.loading && !secondaryServerPage.error && <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                        {secondaryServerPage.items.map((item) => {
                           const itemLogs = workLogs.filter((log) => log.secondaryWorkItemId === item.id);
                           const employeesForItem = item.employeeNames?.length ? item.employeeNames : Array.from(new Set(itemLogs.map((log) => employees.find((employee) => employee.id === log.employeeId)?.name).filter(Boolean))) as string[];
                           return <article key={item.id} className="rounded-xl border border-amber-100 bg-white p-4 text-xs shadow-sm">
@@ -3213,6 +3234,7 @@ export default function AdminDashboard({
                           </article>;
                         })}
                       </div>}
+                      <ServerPagination page={secondaryServerPage.page} totalPages={secondaryServerPage.totalPages} total={secondaryServerPage.total} pageSize={secondaryServerPage.pageSize} loading={secondaryServerPage.loading} onPageChange={secondaryServerPage.setPage} onPageSizeChange={secondaryServerPage.setPageSize} />
                       {selectedSecondaryWorkItem && <div className="mt-4 rounded-xl border bg-white p-4"><h4 className="font-black text-slate-900">Partes de {selectedSecondaryWorkItem.name}</h4><div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">{selectedSecondaryLogs.length ? selectedSecondaryLogs.map((log) => { const employee = employees.find((row) => row.id === log.employeeId); return <article key={log.id} className="rounded-lg bg-slate-50 p-3"><div className="flex flex-wrap justify-between gap-2"><b>{employee?.name || 'Empleado'}</b><span className="text-[10px] font-bold text-slate-400">{log.date} · {log.hours ?? 0} h</span></div><p className="mt-1 font-bold text-amber-700">{log.title}</p><p className="mt-1 whitespace-pre-wrap text-slate-600">{log.description}</p></article>; }) : <p className="text-xs text-slate-400">No hay partes asociados cargados en memoria. Usá Actualizar para refrescar.</p>}</div></div>}
                     </section>
                     </>

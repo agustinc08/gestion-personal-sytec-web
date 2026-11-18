@@ -625,7 +625,7 @@ export default function EmployeeDashboard({
 
       {/* Alerta de Registro Diario Pendiente para el Agente */}
       {!approvedLeaveToday && !hasLogToday && requiresWorkLog(todayWorkday) && (
-        <div className={`p-5 mb-8 rounded-3xl border shadow-sm flex flex-col md:flex-row items-center justify-between gap-5 transition-all ${
+        <div data-reminded={wasReminded} className={`employee-worklog-alert p-5 mb-8 rounded-3xl border shadow-sm flex flex-col md:flex-row items-center justify-between gap-5 transition-all ${
           wasReminded 
             ? 'bg-rose-50 border-rose-200 animate-pulse text-rose-900 shadow-rose-100/50' 
             : 'bg-amber-50 border-amber-200 text-amber-900 shadow-amber-100/50'
@@ -1889,7 +1889,7 @@ export default function EmployeeDashboard({
         {activeTab === 'perfil' && (
           <div className="space-y-8 animate-fade-in">
             {/* Resumen de Días de Feria, Compensatorios y Otras Licencias */}
-            <div className="bg-gradient-to-br from-slate-50 to-slate-150 p-6 rounded-3xl border border-gray-200 space-y-6">
+            <div className="employee-license-summary bg-gradient-to-br from-slate-50 to-slate-150 p-6 rounded-3xl border border-gray-200 space-y-6">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200/60 pb-4">
                 <div>
                   <h3 className="text-md font-bold text-slate-900 flex items-center gap-2">

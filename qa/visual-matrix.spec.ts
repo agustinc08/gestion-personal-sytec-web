@@ -71,7 +71,8 @@ const pageResponse = (items: unknown[], url: URL) => {
   return { items: items.slice((page - 1) * pageSize, page * pageSize), page, pageSize, total: items.length, totalPages: Math.max(1, Math.ceil(items.length / pageSize)) };
 };
 
-async function installApiFixtures(page: Page, role: typeof roles[number], mustChangePassword = false, requests?: string[], mutation?: { delayMs?: number; status?: number }) {
+async function installApiFixtures(page: Page, role: typeof roles[number], mustChangePassword = false, requests?: string[], mutation?: { delayMs?: number; status?: number; workLogs?: typeof workLogs }) {
+  const fixtureWorkLogs = mutation?.workLogs || workLogs;
   const roleEmployees = employees.map((employee, index) => ({ ...employee, isAdmin: role === 'ADMIN' && index === 0 }));
   await page.route(/^http:\/\/(?!127\.0\.0\.1:4173|127\.0\.0\.1:49999).*/, (route) => route.abort());
   await page.route('http://127.0.0.1:49999/**', async (route) => {
@@ -86,7 +87,7 @@ async function installApiFixtures(page: Page, role: typeof roles[number], mustCh
         return;
       }
       const id = path.split('/').pop();
-      const current = workLogs.find((log) => log.id === id) || workLogs[0];
+      const current = fixtureWorkLogs.find((log) => log.id === id) || fixtureWorkLogs[0];
       const updated = { ...current, ...request.postDataJSON() };
       Object.assign(current, updated);
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(updated) });
@@ -111,8 +112,8 @@ async function installApiFixtures(page: Page, role: typeof roles[number], mustCh
     else if (path === 'projects/my') body = pageResponse(projects.slice(0, 5), url);
     else if (path === 'projects') body = url.searchParams.has('page') ? pageResponse(projects, url) : projects;
     else if (path === 'work-logs/attendance') body = url.searchParams.has('page') ? pageResponse([], url) : [];
-    else if (path === 'work-logs/my') body = pageResponse(workLogs.slice(0, 10), url);
-    else if (path === 'work-logs') body = url.searchParams.has('page') ? pageResponse(workLogs, url) : workLogs;
+    else if (path === 'work-logs/my') body = pageResponse(fixtureWorkLogs.slice(0, 10), url);
+    else if (path === 'work-logs') body = url.searchParams.has('page') ? pageResponse(fixtureWorkLogs, url) : fixtureWorkLogs;
     else if (path === 'licenses/my') body = pageResponse(licenses.slice(0, 5), url);
     else if (path === 'licenses') body = url.searchParams.has('page') ? pageResponse(licenses, url) : licenses;
     else if (path === 'secondary-work-items/options') body = [];
@@ -132,7 +133,7 @@ async function installApiFixtures(page: Page, role: typeof roles[number], mustCh
       latestWorkLogsByEmployee: [], technologies: [], recentAudit: [], nextStrikeDuty: null,
       projectsTotal: projects.length, pendingWorkLogEmployees: [],
     };
-    else if (path === 'dashboard/employee') body = { licenses: licenses.length, workLogs: workLogs.length, workLogToday: false, approvedLeaveToday: false, recentWorkLogs: workLogs.slice(0, 10), projects: [] };
+    else if (path === 'dashboard/employee') body = { licenses: licenses.length, workLogs: fixtureWorkLogs.length, workLogToday: false, approvedLeaveToday: false, recentWorkLogs: fixtureWorkLogs.slice(0, 10), projects: [] };
     else if (path === 'dashboard/admin-worklog-calendar') body = { days: [], items: [] };
     else body = [];
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
@@ -186,6 +187,73 @@ test('employee worklog edit form remains open and shows the API error', async ({
   await expect(page.getByText('Solo podés corregir partes de los últimos 7 días.')).toBeVisible();
   await expect(description).toHaveValue('Texto retenido frente al error');
   await expect(page.getByRole('button', { name: 'Guardar cambios' })).toBeEnabled();
+});
+
+test('employee calendar edits a selected worklog and reflects its corrected date', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const calendarWorkLogs = workLogs.slice(0, 10).map((log, index) => ({
+    ...log,
+    date: index < 2 ? '2026-11-13' : index === 9 ? '2026-11-12' : '2026-11-18',
+  }));
+  await installApiFixtures(page, 'EMPLOYEE', false, undefined, { workLogs: calendarWorkLogs });
+  await page.clock.install({ time: new Date('2026-11-19T15:00:00.000Z') });
+  await page.addInitScript(() => localStorage.setItem('gestion-sytec-theme', 'light'));
+  await page.goto('/gestion-personal-sytec/');
+  await page.getByLabel(/CUIL del Agente/i).fill('20-00000001-1');
+  await page.getByLabel('Contraseña').fill('qa-password');
+  await page.getByRole('button', { name: 'Ingresar al Sistema' }).click();
+  await expect(page.getByText('Sesión iniciada:', { exact: false })).toBeVisible({ timeout: 15_000 });
+  await page.getByRole('button', { name: 'Ver calendario' }).click();
+
+  const day13 = page.getByRole('button', { name: 'Seleccionar 2026-11-13' });
+  await day13.click();
+  await expect(page.getByTestId('selected-calendar-date')).toHaveText('2026-11-13');
+  const firstLog = page.getByTestId('selected-day-worklog-worklog-1');
+  const secondLog = page.getByTestId('selected-day-worklog-worklog-2');
+  await expect(firstLog.getByRole('button', { name: 'Editar parte: Carga de desarrollo' })).toBeVisible();
+  await expect(secondLog.getByRole('button', { name: 'Editar parte: Revisión técnica' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '+ Cargar otro' })).toBeVisible();
+
+  await firstLog.getByRole('button', { name: 'Editar parte: Carga de desarrollo' }).click();
+  await expect(page.getByRole('heading', { name: 'Editar parte diario' })).toBeVisible();
+  const dateInput = page.locator('input[type="date"][min]');
+  await expect(dateInput).toHaveValue('2026-11-13');
+  await dateInput.fill('2026-11-14');
+  await page.getByRole('button', { name: 'Guardar cambios' }).click();
+  await expect(page.getByText('Parte diario actualizado correctamente.')).toBeVisible();
+  await expect(page.getByTestId('selected-calendar-date')).toHaveText('2026-11-14');
+  await expect(page.getByTestId('selected-day-worklog-worklog-1')).toBeVisible();
+
+  await day13.click();
+  await expect(page.getByTestId('selected-day-worklog-worklog-1')).toHaveCount(0);
+  await expect(page.getByTestId('selected-day-worklog-worklog-2')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Seleccionar 2026-11-12' }).click();
+  const oldLog = page.getByTestId('selected-day-worklog-worklog-10');
+  await expect(oldLog).toBeVisible();
+  await expect(oldLog.getByText('Solo lectura')).toBeVisible();
+  await expect(oldLog.getByRole('button', { name: /Editar/ })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Seleccionar 2026-11-11' }).click();
+  await expect(page.getByTestId('selected-day-panel').getByRole('button', { name: 'Cargar parte' })).toBeVisible();
+  await expect(page.getByTestId('selected-day-worklog-worklog-1')).toHaveCount(0);
+});
+
+test('employee selected-day actions fit mobile and desktop light/dark viewports', async ({ page }, testInfo) => {
+  await login(page, 'EMPLOYEE', 'light');
+  await page.getByRole('button', { name: 'Ver calendario' }).click();
+  const workLogDate = formatDateOnlyArgentina(addDaysDateOnly(fixtureToday, -2));
+  await page.getByRole('button', { name: `Seleccionar ${workLogDate}` }).click();
+  const logCard = page.getByTestId('selected-day-worklog-worklog-1');
+
+  for (const viewport of [{ width: 390, theme: 'light' }, { width: 390, theme: 'dark' }, { width: 1366, theme: 'light' }, { width: 1366, theme: 'dark' }] as const) {
+    await page.setViewportSize({ width: viewport.width, height: 900 });
+    await page.evaluate((theme) => { document.documentElement.dataset.theme = theme; localStorage.setItem('gestion-sytec-theme', theme); }, viewport.theme);
+    await expect(page.getByRole('button', { name: '+ Cargar otro' })).toBeVisible();
+    await expect(logCard.getByRole('button', { name: 'Editar parte: Carga de desarrollo' })).toBeVisible();
+    await expectNoHorizontalOverflow(page, viewport.width);
+    await page.screenshot({ path: testInfo.outputPath(`employee-calendar-actions-${viewport.width}-${viewport.theme}.png`), fullPage: true });
+  }
 });
 
 test('employee edit form fits the requested responsive and theme smoke viewports', async ({ page }, testInfo) => {

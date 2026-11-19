@@ -13,9 +13,22 @@ export function getArgentinaTodayDateOnly(date = new Date()) {
 
 export function parseDateOnlySafe(value?: string | Date | null) {
   if (!value) return '';
-  if (value instanceof Date) return getArgentinaTodayDateOnly(value);
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? '' : getArgentinaTodayDateOnly(value);
   const match = String(value).slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  return match ? match[0] : '';
+  if (!match) return '';
+  const [, year, month, day] = match.map(Number);
+  const parsed = new Date(Date.UTC(year, month - 1, day, 12));
+  return parsed.getUTCFullYear() === year && parsed.getUTCMonth() + 1 === month && parsed.getUTCDate() === day ? match[0] : '';
+}
+
+export function getMonthDateOnlyRange(year: number, month: number) {
+  if (!Number.isInteger(year) || year < 1 || year > 9999 || !Number.isInteger(month) || month < 1 || month > 12) {
+    return { from: '', to: '' };
+  }
+  const from = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-01`;
+  const lastDay = new Date(Date.UTC(year, month, 0, 12)).getUTCDate();
+  const to = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  return { from, to };
 }
 
 export function formatDateOnlyArgentina(value?: string | Date | null) {

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { addDaysDateOnly, formatDateOnlyArgentina, getArgentinaTodayDateOnly } from '../src/utils/date';
 
 const widths = [390, 430, 768, 1024, 1366, 1920];
 const roles = ['ADMIN', 'EMPLOYEE'] as const;
@@ -37,6 +38,7 @@ const projects = Array.from({ length: 30 }, (_, index) => ({
   deployments: [],
 }));
 
+const fixtureToday = getArgentinaTodayDateOnly();
 const workLogs = Array.from({ length: 30 }, (_, index) => ({
   id: `worklog-${index + 1}`,
   employeeId: 'employee-1',
@@ -44,7 +46,7 @@ const workLogs = Array.from({ length: 30 }, (_, index) => ({
   projectName: projects[0].name,
   title: index % 2 ? 'Revisión técnica' : 'Carga de desarrollo',
   description: 'Fixture local para control visual.',
-  date: '2026-11-17',
+  date: index === 9 ? formatDateOnlyArgentina(addDaysDateOnly(fixtureToday, -7)) : formatDateOnlyArgentina(addDaysDateOnly(fixtureToday, -2)),
   mode: index % 2 ? 'presencial' : 'remoto',
   activityType: 'PROJECT',
   hours: 6,
@@ -56,8 +58,8 @@ const licenses = Array.from({ length: 30 }, (_, index) => ({
   id: `license-${index + 1}`,
   employeeId: 'employee-1',
   article: 'Art. 14',
-  startDate: '2026-12-01',
-  endDate: '2026-12-05',
+  startDate: formatDateOnlyArgentina(addDaysDateOnly(fixtureToday, -2)),
+  endDate: formatDateOnlyArgentina(addDaysDateOnly(fixtureToday, -2)),
   reason: 'Licencia anual',
   status: index === 0 ? 'pendiente' : 'aprobado',
   dateRequested: '2026-11-17',
@@ -69,7 +71,7 @@ const pageResponse = (items: unknown[], url: URL) => {
   return { items: items.slice((page - 1) * pageSize, page * pageSize), page, pageSize, total: items.length, totalPages: Math.max(1, Math.ceil(items.length / pageSize)) };
 };
 
-async function installApiFixtures(page: Page, role: typeof roles[number], mustChangePassword = false, requests?: string[]) {
+async function installApiFixtures(page: Page, role: typeof roles[number], mustChangePassword = false, requests?: string[], mutation?: { delayMs?: number; status?: number }) {
   const roleEmployees = employees.map((employee, index) => ({ ...employee, isAdmin: role === 'ADMIN' && index === 0 }));
   await page.route(/^http:\/\/(?!127\.0\.0\.1:4173|127\.0\.0\.1:49999).*/, (route) => route.abort());
   await page.route('http://127.0.0.1:49999/**', async (route) => {
@@ -77,6 +79,19 @@ async function installApiFixtures(page: Page, role: typeof roles[number], mustCh
     const url = new URL(request.url());
     const path = url.pathname.replace(/^\/+/, '');
     if (requests && request.method() === 'GET') requests.push(`${path}?${url.searchParams.toString()}`);
+    if (request.method() === 'PATCH' && /^work-logs\/[^/]+$/.test(path)) {
+      if (mutation?.delayMs) await new Promise((resolve) => setTimeout(resolve, mutation.delayMs));
+      if (mutation?.status && mutation.status >= 400) {
+        await route.fulfill({ status: mutation.status, contentType: 'application/json', body: JSON.stringify({ message: 'Solo podés corregir partes de los últimos 7 días.' }) });
+        return;
+      }
+      const id = path.split('/').pop();
+      const current = workLogs.find((log) => log.id === id) || workLogs[0];
+      const updated = { ...current, ...request.postDataJSON() };
+      Object.assign(current, updated);
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(updated) });
+      return;
+    }
     const user = { id: 'user-qa', employeeId: 'employee-1', role, mustChangePassword, cuil: employees[0].cuil };
     if (path === 'auth/me' && !request.headers().authorization) {
       await route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ message: 'Unauthorized' }) });
@@ -123,6 +138,69 @@ async function installApiFixtures(page: Page, role: typeof roles[number], mustCh
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   });
 }
+
+test('employee edits only recent work logs and saves through PATCH', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installApiFixtures(page, 'EMPLOYEE', false, undefined, { delayMs: 500 });
+  await page.addInitScript(() => localStorage.setItem('gestion-sytec-theme', 'light'));
+  await page.goto('/gestion-personal-sytec/');
+  await page.getByLabel(/CUIL del Agente/i).fill('20-00000001-1');
+  await page.getByLabel('Contraseña').fill('qa-password');
+  await page.getByRole('button', { name: 'Ingresar al Sistema' }).click();
+  await expect(page.getByText('Sesión iniciada:', { exact: false })).toBeVisible({ timeout: 15_000 });
+
+  const recentCard = page.locator('#worklog-card-worklog-1');
+  const oldCard = page.locator('#worklog-card-worklog-10');
+  await expect(recentCard).toBeVisible();
+  await expect(recentCard.getByRole('button', { name: 'Editar' })).toBeVisible();
+  await expect(oldCard.getByRole('button', { name: 'Editar' })).toHaveCount(0);
+  await recentCard.getByRole('button', { name: 'Editar' }).click();
+  const description = page.locator('label').filter({ hasText: '¿Qué hiciste hoy? (Descripción de Tarea)' }).locator('..').locator('textarea');
+  await expect(description).toHaveValue('Fixture local para control visual.');
+  await expect(page.getByRole('note')).toContainText('El parte igualmente será registrado.');
+  await description.fill('Descripción corregida desde el flujo de empleado.');
+
+  const saveButton = page.getByRole('button', { name: 'Guardar cambios' });
+  await saveButton.click();
+  const savingButton = page.getByRole('button', { name: 'Guardando...' });
+  await expect(savingButton).toBeDisabled();
+  await expect(page.getByText('Parte diario actualizado correctamente.')).toBeVisible();
+  await expect(page.locator('#worklog-card-worklog-1')).toContainText('Descripción corregida desde el flujo de empleado.');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+});
+
+test('employee worklog edit form remains open and shows the API error', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installApiFixtures(page, 'EMPLOYEE', false, undefined, { status: 400 });
+  await page.addInitScript(() => localStorage.setItem('gestion-sytec-theme', 'light'));
+  await page.goto('/gestion-personal-sytec/');
+  await page.getByLabel(/CUIL del Agente/i).fill('20-00000001-1');
+  await page.getByLabel('Contraseña').fill('qa-password');
+  await page.getByRole('button', { name: 'Ingresar al Sistema' }).click();
+  await expect(page.getByText('Sesión iniciada:', { exact: false })).toBeVisible({ timeout: 15_000 });
+  const card = page.locator('#worklog-card-worklog-1');
+  await card.getByRole('button', { name: 'Editar' }).click();
+  const description = page.locator('label').filter({ hasText: '¿Qué hiciste hoy? (Descripción de Tarea)' }).locator('..').locator('textarea');
+  await description.fill('Texto retenido frente al error');
+  await page.getByRole('button', { name: 'Guardar cambios' }).click();
+  await expect(page.getByText('Solo podés corregir partes de los últimos 7 días.')).toBeVisible();
+  await expect(description).toHaveValue('Texto retenido frente al error');
+  await expect(page.getByRole('button', { name: 'Guardar cambios' })).toBeEnabled();
+});
+
+test('employee edit form fits the requested responsive and theme smoke viewports', async ({ page }, testInfo) => {
+  await login(page, 'EMPLOYEE', 'light');
+  await page.locator('#worklog-card-worklog-1').getByRole('button', { name: 'Editar' }).click();
+  for (const viewport of [{ width: 390, theme: 'light' }, { width: 390, theme: 'dark' }, { width: 1366, theme: 'light' }, { width: 1366, theme: 'dark' }] as const) {
+    await page.setViewportSize({ width: viewport.width, height: 900 });
+    await page.evaluate((theme) => { document.documentElement.dataset.theme = theme; localStorage.setItem('gestion-sytec-theme', theme); }, viewport.theme);
+    await expect(page.getByRole('heading', { name: 'Editar parte diario' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Guardar cambios' })).toBeVisible();
+    await expect(page.locator('input[type="date"][min]')).toBeVisible();
+    await expectNoHorizontalOverflow(page, viewport.width);
+    await page.screenshot({ path: testInfo.outputPath(`employee-edit-${viewport.width}-${viewport.theme}.png`), fullPage: true });
+  }
+});
 
 test('login and mandatory password change screens render with isolated fixtures', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });

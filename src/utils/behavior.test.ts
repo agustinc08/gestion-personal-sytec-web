@@ -3,9 +3,17 @@ import { getInitialTheme, nextTheme, persistTheme } from './theme';
 import { copyWorkLogDraft, employeeDaySummary } from './employee-day';
 import { createLicenseRequestWithOptionalCertificate } from './license-submit';
 import { projectLifecycle } from './project-lifecycle';
+import { isWithinEmployeeWorkLogEditWindow } from './date';
 import type { WorkLog } from '../types';
 
 describe('user-facing workflow helpers', () => {
+  it('uses seven inclusive calendar dates for employee work log edits', () => {
+    expect(isWithinEmployeeWorkLogEditWindow('2026-11-19', '2026-11-19')).toBe(true);
+    expect(isWithinEmployeeWorkLogEditWindow('2026-11-13', '2026-11-19')).toBe(true);
+    expect(isWithinEmployeeWorkLogEditWindow('2026-11-12', '2026-11-19')).toBe(false);
+    expect(isWithinEmployeeWorkLogEditWindow('2026-11-20', '2026-11-19')).toBe(false);
+  });
+
   it('defaults to light and persists dark theme', () => {
     localStorage.clear();
     expect(getInitialTheme()).toBe('light');

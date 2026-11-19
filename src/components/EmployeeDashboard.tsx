@@ -330,7 +330,7 @@ export default function EmployeeDashboard({
     return () => window.removeEventListener('sytec:refreshed', refreshPages);
   }, [dailyServerPage.refresh, projectServerPage.refresh, licenseServerPage.refresh, calendarLicensePage.refresh, selectedProjectWorkLogsPage.refresh]);
   const dailyFilteredLogs = dailyServerPage.items;
-  const selectedDayLogs = dailyFilteredLogs.filter((log) => log.date === selectedCalendarDate);
+  const selectedDayLogs = dailyFilteredLogs.filter((log) => log.employeeId === employee.id && log.date === selectedCalendarDate);
   const calendarYear = Number(dailyYear) || new Date().getFullYear();
   const calendarMonthIndex = (Number(dailyMonth) || new Date().getMonth() + 1) - 1;
   const monthStart = new Date(calendarYear, calendarMonthIndex, 1);
@@ -342,19 +342,29 @@ export default function EmployeeDashboard({
   ];
   const todayIso = getArgentinaTodayDateOnly();
   const monthTitle = monthStart.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
+  const resetWorkLogForm = () => {
+    setEditingWorkLogId(null); setLogTitle(''); setLogDescription(''); setLogMode('presencial'); setLogProjectId(''); setWorkItemType('PROJECT'); setSecondaryWorkItemId(''); setSecondaryWorkItemName(''); setLogActivityType('PROJECT'); setLogHours(''); setOverrideDate(false); setLogDate(getArgentinaTodayDateOnly());
+  };
+  const selectCalendarDate = (date: string) => {
+    setSelectedCalendarDate(date);
+    const [year, month] = date.slice(0, 7).split('-');
+    const monthValue = String(Number(month));
+    if (year !== dailyYear || monthValue !== dailyMonth) {
+      setDailyYear(year);
+      setDailyMonth(monthValue);
+      dailyServerPage.setFilter('year', year);
+      dailyServerPage.setFilter('month', monthValue);
+    }
+  };
   const setCalendarMonth = (year: number, monthIndex: number) => {
     const next = new Date(year, monthIndex, 1);
-    setDailyYear(String(next.getFullYear()));
-    setDailyMonth(String(next.getMonth() + 1));
-    setSelectedCalendarDate(toLocalDateInput(next));
+    selectCalendarDate(toLocalDateInput(next));
   };
   const openFormForDate = (date: string) => {
+    resetWorkLogForm();
     setLogDate(date);
     setOverrideDate(true);
     workLogFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
-  const resetWorkLogForm = () => {
-    setEditingWorkLogId(null); setLogTitle(''); setLogDescription(''); setLogMode('presencial'); setLogProjectId(''); setWorkItemType('PROJECT'); setSecondaryWorkItemId(''); setSecondaryWorkItemName(''); setLogActivityType('PROJECT'); setLogHours(''); setOverrideDate(false); setLogDate(getArgentinaTodayDateOnly());
   };
   const editWorkLog = (log: WorkLog) => {
     setEditingWorkLogId(log.id); setLogTitle(log.title); setLogDescription(log.description); setLogMode(log.mode); setLogProjectId(log.projectId || ''); setWorkItemType(log.secondaryWorkItemId ? 'SECONDARY' : 'PROJECT'); setSecondaryWorkItemId(log.secondaryWorkItemId || ''); setSecondaryWorkItemName(log.secondaryWorkItemName || ''); setLogActivityType(log.activityType || 'PROJECT'); setLogHours(log.hours === undefined ? '' : String(log.hours)); setLogDate(log.date); setOverrideDate(true); workLogFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -495,7 +505,7 @@ export default function EmployeeDashboard({
 
       const wasEditing = !!editingWorkLogId;
       resetWorkLogForm();
-      setSelectedCalendarDate(submittedDate);
+      selectCalendarDate(submittedDate);
 
       const match = projects.find(p => p.id === submittedProjectId || (p.name || '').toLowerCase().trim() === submittedTitle.toLowerCase());
       if (match) {
@@ -1180,7 +1190,8 @@ export default function EmployeeDashboard({
                           <button
                             key={iso}
                             type="button"
-                            onClick={() => setSelectedCalendarDate(iso)}
+                            aria-label={`Seleccionar ${iso}`}
+                            onClick={() => selectCalendarDate(iso)}
                             className={`min-h-[76px] rounded-xl border p-2 text-left transition-all hover:border-indigo-200 ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-100 bg-indigo-50' : isToday ? 'border-emerald-300 bg-emerald-50' : 'border-slate-150 bg-white'}`}
                           >
                             <span className={`block text-xs font-black ${isToday ? 'text-emerald-700' : 'text-slate-800'}`}>{date.getDate()}</span>
@@ -1199,23 +1210,20 @@ export default function EmployeeDashboard({
                     </div>
                   </div>
 
-                  <div className="lg:col-span-4 bg-white border border-gray-150 rounded-2xl p-4 shadow-sm">
+                  <div data-testid="selected-day-panel" className="lg:col-span-4 bg-white border border-gray-150 rounded-2xl p-4 shadow-sm">
                     <div className="flex items-start justify-between gap-2 mb-3">
                       <div>
                         <h4 className="text-sm font-black text-slate-900">Día seleccionado</h4>
-                        <p className="text-xs text-slate-500 font-mono">{selectedCalendarDate}</p>
+                        <p data-testid="selected-calendar-date" className="text-xs text-slate-500 font-mono">{selectedCalendarDate}</p>
                       </div>
-                      <button type="button" onClick={() => openFormForDate(selectedCalendarDate)} className="text-[10px] font-black bg-indigo-600 text-white rounded-xl px-3 py-2 hover:bg-indigo-700">
-                        Cargar parte
+                      <button type="button" onClick={() => openFormForDate(selectedCalendarDate)} className="shrink-0 text-[10px] font-black bg-indigo-600 text-white rounded-xl px-3 py-2 hover:bg-indigo-700">
+                        {selectedDayLogs.length ? '+ Cargar otro' : 'Cargar parte'}
                       </button>
                     </div>
                     {selectedDayLogs.length === 0 ? (
                       <div className="border border-dashed border-slate-200 rounded-xl p-5 text-center">
                         <Clock className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                         <p className="text-sm text-slate-500">Sin registros para este día.</p>
-                        <button type="button" onClick={() => openFormForDate(selectedCalendarDate)} className="mt-3 text-xs font-bold text-indigo-600 hover:underline">
-                          Cargar parte para este día
-                        </button>
                       </div>
                     ) : (
                       <div className="space-y-3 max-h-[480px] overflow-y-auto pr-1">
@@ -1223,11 +1231,16 @@ export default function EmployeeDashboard({
                           const linkedProject = projects.find(p => p.id === log.projectId || (p.name || '').toLowerCase().trim() === (log.title || '').toLowerCase().trim());
                           const linkedSecondary = secondaryWorkItems.find((item) => item.id === log.secondaryWorkItemId);
                           return (
-                            <div key={log.id} className="border border-slate-150 rounded-xl p-3 text-xs">
-                              <div className="flex flex-wrap gap-1 mb-2">
-                                <span className={`font-bold border rounded px-2 py-1 ${modeBadgeClass(log.mode)}`}>{modeLabels[log.mode] || log.mode}</span>
-                                {log.activityType && <span className="font-bold border border-indigo-100 bg-indigo-50 text-indigo-700 rounded px-2 py-1">{activityTypeLabel(log.activityType)}</span>}
-                                {log.hours !== undefined && <span className="font-bold border border-slate-200 bg-slate-50 text-slate-700 rounded px-2 py-1">{log.hours} h</span>}
+                            <div key={log.id} id={`selected-day-worklog-${log.id}`} data-testid={`selected-day-worklog-${log.id}`} className="border border-slate-150 rounded-xl p-3 text-xs">
+                              <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
+                                <div className="flex flex-wrap gap-1">
+                                  <span className={`font-bold border rounded px-2 py-1 ${modeBadgeClass(log.mode)}`}>{modeLabels[log.mode] || log.mode}</span>
+                                  {log.activityType && <span className="font-bold border border-indigo-100 bg-indigo-50 text-indigo-700 rounded px-2 py-1">{activityTypeLabel(log.activityType)}</span>}
+                                  {log.hours !== undefined && <span className="font-bold border border-slate-200 bg-slate-50 text-slate-700 rounded px-2 py-1">{log.hours} h</span>}
+                                </div>
+                                {log.employeeId === employee.id && isWithinEmployeeWorkLogEditWindow(log.date, todayStr)
+                                  ? <button type="button" aria-label={`Editar parte: ${log.title}`} onClick={() => editWorkLog(log)} className="shrink-0 rounded border border-indigo-200 bg-indigo-50 px-2 py-1 font-semibold text-indigo-700 hover:bg-indigo-100">Editar</button>
+                                  : <span className="shrink-0 rounded border border-slate-200 px-2 py-1 text-slate-500">Solo lectura</span>}
                               </div>
                               <h5 className="font-black text-slate-900">{log.title}</h5>
                               {linkedProject && <p className="mt-1 font-bold text-emerald-700">Proyecto: {linkedProject.name}</p>}

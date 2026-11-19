@@ -7,6 +7,7 @@ import { projectsApi } from './api/projects.api';
 import { strikeApi } from './api/strike.api';
 import { worklogsApi } from './api/worklogs.api';
 import { authApi } from './api/auth.api';
+import { TOKEN_KEY } from './api/client';
 import { announcementsApi } from './api/announcements.api';
 import { dependenciesApi } from './api/dependencies.api';
 import { secondaryWorkItemsApi } from './api/secondaryWorkItems.api';
@@ -62,6 +63,7 @@ export default function App() {
   const [remindedEmpIds, setRemindedEmpIds] = useState<string[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [initialFetchDone, setInitialFetchDone] = useState(false);
+  const [sessionCheckFailed, setSessionCheckFailed] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -69,6 +71,7 @@ export default function App() {
   const [employeeSummary, setEmployeeSummary] = useState<any>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const refreshInFlight = useRef(false);
+  const sessionCheckStarted = useRef(false);
 
   const refreshData = useCallback(async (user = currentUser, options: { silent?: boolean; scope?: 'all' | 'employees' | 'projects' | 'secondary' | 'licenses' | 'workLogs' | 'dashboard' | 'attendance' | 'config' } = {}) => {
     if (!user || refreshInFlight.current) return;
@@ -79,24 +82,49 @@ export default function App() {
       const scope = options.scope || 'all';
       const wants = (...domains: string[]) => scope === 'all' || domains.includes(scope);
       const today = new Date();
-      const [employeeRows, projectRows, secondaryRows, licensePage, dashboard, attendanceRows, rules, articleRows, strike, dependencyRows, announcementRows] = await Promise.all([
-        (wants('employees') || (scope === 'licenses' && isAdmin)) ? (isAdmin ? employeesApi.options() : employeesApi.me().then((me) => [me])) : null,
-        wants('projects', 'workLogs') ? projectsApi.options() : null,
-        wants('secondary') ? secondaryWorkItemsApi.options().catch(() => []) : null,
-        wants('licenses') ? (isAdmin ? licensesApi.page({ page: 1, pageSize: 50, status: 'pendiente' }) : licensesApi.myPage({ page: 1, pageSize: 25 })) : null,
-        wants('dashboard', 'employees', 'projects', 'licenses', 'workLogs') ? (isAdmin ? dashboardV2Api.summary() : dashboardV2Api.employeeSummary()) : null,
-        wants('attendance') && !isAdmin ? worklogsApi.attendance({ year: today.getFullYear(), month: today.getMonth() + 1 }) : null,
-        scope === 'all' || scope === 'config' ? licensesApi.rules() : null,
-        (scope === 'all' || scope === 'config') && isAdmin ? licenseArticlesApi.all(true).catch(() => []) : null,
-        scope === 'all' || scope === 'config' ? strikeApi.config() : null,
-        (scope === 'all' || scope === 'config') && isAdmin ? dependenciesApi.all() : null,
-        scope === 'all' ? announcementsApi.active().catch(() => []) : null,
-      ]);
-      if (employeeRows) setEmployees(employeeRows);
-      if (projectRows) setProjects(projectRows);
-      if (secondaryRows) setSecondaryWorkItems(secondaryRows);
-      if (licensePage) setLicenseRequests(licensePage.items);
-      if (dashboard) {
+      const requests: Record<string, Promise<any> | null> = {
+        employees: (wants('employees') || (scope === 'licenses' && isAdmin)) ? (isAdmin ? employeesApi.options() : employeesApi.me().then((me) => [me])) : null,
+        projects: wants('projects', 'workLogs') ? projectsApi.options() : null,
+        secondary: wants('secondary') ? secondaryWorkItemsApi.options().catch(() => []) : null,
+        licenses: wants('licenses') ? (isAdmin ? licensesApi.page({ page: 1, pageSize: 50, status: 'pendiente' }) : licensesApi.myPage({ page: 1, pageSize: 25 })) : null,
+        dashboard: wants('dashboard', 'employees', 'projects', 'licenses', 'workLogs') ? (isAdmin ? dashboardV2Api.summary() : dashboardV2Api.employeeSummary()) : null,
+        attendance: wants('attendance') && !isAdmin ? worklogsApi.attendance({ year: today.getFullYear(), month: today.getMonth() + 1 }) : null,
+        rules: scope === 'all' || scope === 'config' ? licensesApi.rules() : null,
+        articles: (scope === 'all' || scope === 'config') && isAdmin ? licenseArticlesApi.all(true).catch(() => []) : null,
+        strike: scope === 'all' || scope === 'config' ? strikeApi.config() : null,
+        dependencies: (scope === 'all' || scope === 'config') && isAdmin ? dependenciesApi.all() : null,
+        announcements: scope === 'all' ? announcementsApi.active().catch(() => []) : null,
+      };
+      const results = await Promise.all(Object.entries(requests).map(async ([key, request]) => {
+        if (!request) return { key, skipped: true as const };
+        try { return { key, value: await request }; }
+        catch (error) { return { key, error }; }
+      }));
+      const values = Object.fromEntries(results.filter((result): result is { key: string; value: any } => 'value' in result).map(({ key, value }) => [key, value]));
+      const failures = results.filter((result): result is { key: string; error: unknown } => 'error' in result);
+      const authRelatedFailure = failures.some(({ error }: any) => [401, 403].includes(error?.response?.status));
+      if (authRelatedFailure) {
+        try {
+          await authApi.me();
+        } catch (error: any) {
+          if (error?.response?.status === 401 || error?.response?.status === 403) {
+            authApi.logout();
+            setCurrentUser(null);
+            setLoadError(null);
+            throw error;
+          }
+        }
+      }
+      const labels: Record<string, string> = { employees: 'perfil', projects: 'proyectos', licenses: 'licencias', dashboard: 'resumen', attendance: 'asistencia', rules: 'configuración', dependencies: 'dependencias' };
+      setLoadError(failures.length
+        ? `La sesión sigue activa, pero no se pudieron cargar ${failures.map(({ key }) => labels[key] || key).join(', ')}. Podés reintentar.`
+        : null);
+      if ('employees' in values) setEmployees(values.employees);
+      if ('projects' in values) setProjects(values.projects);
+      if ('secondary' in values) setSecondaryWorkItems(values.secondary);
+      if ('licenses' in values) setLicenseRequests(values.licenses.items);
+      if ('dashboard' in values) {
+        const dashboard = values.dashboard;
         const workLogRows = isAdmin
           ? (dashboard.latestWorkLogsByEmployee || []).flatMap((row: any) => row.workLog ? [{ ...row.workLog, employeeId: row.employeeId }] : [])
           : dashboard.recentWorkLogs || [];
@@ -104,32 +132,44 @@ export default function App() {
         setAdminSummary(isAdmin ? dashboard : null);
         setEmployeeSummary(isAdmin ? null : dashboard);
       }
-      if (attendanceRows) setDailyAttendances(attendanceRows);
-      if (rules) setLicenseRules(rules);
-      if (articleRows) setLicenseArticles(articleRows);
-      if (strike) setStrikeConfig(strike);
-      if (dependencyRows) setDependencies(dependencyRows);
-      if (announcementRows) setAnnouncements(announcementRows);
+      if ('attendance' in values) setDailyAttendances(values.attendance);
+      if ('rules' in values) setLicenseRules(values.rules);
+      if ('articles' in values) setLicenseArticles(values.articles);
+      if ('strike' in values) setStrikeConfig(values.strike);
+      if ('dependencies' in values) setDependencies(values.dependencies);
+      if ('announcements' in values) setAnnouncements(values.announcements);
       window.dispatchEvent(new CustomEvent('sytec:refreshed', { detail: { scope } }));
     } finally {
       refreshInFlight.current = false;
       if (!options.silent) setIsRefreshing(false);
     }
   }, [currentUser]);
-  useEffect(() => {
-    async function bootstrap() {
-      try {
-        const user = await authApi.me();
-        setCurrentUser(user);
-        if (!user.mustChangePassword) await refreshData(user);
-      } catch {
+  const verifySession = useCallback(async () => {
+    try {
+      const user = await authApi.me();
+      setCurrentUser(user);
+      setSessionCheckFailed(false);
+      if (!user.mustChangePassword) await refreshData(user);
+    } catch (error: any) {
+      const status = error?.response?.status;
+      if (status === 401 || status === 403) {
         authApi.logout();
-      } finally {
-        setInitialFetchDone(true);
+        setCurrentUser(null);
+        setSessionCheckFailed(false);
+        setLoadError(null);
+      } else if (localStorage.getItem(TOKEN_KEY)) {
+        setSessionCheckFailed(true);
+        setLoadError('No se pudo verificar la sesión. La sesión guardada se conserva; reintentá la conexión.');
       }
+    } finally {
+      setInitialFetchDone(true);
     }
-    bootstrap();
-  }, []);
+  }, [refreshData]);
+  useEffect(() => {
+    if (sessionCheckStarted.current) return;
+    sessionCheckStarted.current = true;
+    void verifySession();
+  }, [verifySession]);
   useEffect(() => {
     if (!currentUser) return;
     const refresh = () => { void refreshData(undefined, { silent: true, scope: 'dashboard' }); };
@@ -162,6 +202,7 @@ export default function App() {
   const handleLogin = async (cuil: string, password: string) => {
     const session = await authApi.login(cuil, password);
     setCurrentUser(session.user);
+    setSessionCheckFailed(false);
     if (!session.user.mustChangePassword) await refreshData(session.user);
     return session.user;
   };
@@ -447,12 +488,16 @@ export default function App() {
   const handleLogout = () => {
     authApi.logout();
     setCurrentUser(null);
+    setSessionCheckFailed(false);
+    setLoadError(null);
     setEmployees([]);
     setProjects([]);
     setWorkLogs([]);
     setDailyAttendances([]);
     setLicenseRequests([]);
-    void refreshData(undefined, { silent: true });
+    setSecondaryWorkItems([]);
+    setEmployeeSummary(null);
+    setAdminSummary(null);
   };
 
   const handleChangePassword = async (currentPassword: string, newPassword: string) => {
@@ -480,8 +525,16 @@ export default function App() {
     return <RequiredPasswordChange onChange={handleChangePassword} onLogout={handleLogout} />;
   }
 
-  if (!currentUser || !currentEmployee) {
+  if (sessionCheckFailed && !currentUser) {
+    return <main className="min-h-screen bg-slate-50 flex items-center justify-center p-6"><section className="max-w-md space-y-4 rounded-lg border border-slate-200 bg-white p-6 text-center shadow-sm"><h1 className="text-lg font-bold text-slate-900">No se pudo verificar la sesión</h1><p role="alert" className="text-sm text-slate-600">{loadError}</p><button type="button" onClick={() => { setInitialFetchDone(false); void verifySession(); }} className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Reintentar</button></section></main>;
+  }
+
+  if (!currentUser) {
     return <LoginScreen onLogin={handleLogin} loadError={loadError} setLoadError={setLoadError} />;
+  }
+
+  if (!currentEmployee) {
+    return <main className="min-h-screen bg-slate-50 flex items-center justify-center p-6"><section className="max-w-md space-y-4 rounded-lg border border-slate-200 bg-white p-6 text-center shadow-sm"><h1 className="text-lg font-bold text-slate-900">Sesión iniciada</h1><p role="alert" className="text-sm text-slate-600">{loadError || 'No se pudo cargar el perfil del empleado.'}</p><div className="flex justify-center gap-3"><button type="button" onClick={() => void refreshData(currentUser)} disabled={isRefreshing} className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">Reintentar</button><button type="button" onClick={handleLogout} className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold">Cerrar sesión</button></div></section></main>;
   }
 
   return (
@@ -511,6 +564,8 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {loadError && <div role="alert" className="flex flex-wrap items-center justify-center gap-3 border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"><span>{loadError}</span><button type="button" onClick={() => void refreshData(currentUser)} disabled={isRefreshing} className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white px-3 py-1.5 font-semibold disabled:opacity-60"><RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />Reintentar</button></div>}
 
       <header className="bg-white border-b border-gray-200 py-6 px-4 md:px-8 shadow-sm">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-4">

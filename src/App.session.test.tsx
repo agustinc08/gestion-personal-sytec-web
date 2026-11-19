@@ -117,4 +117,18 @@ describe('authenticated bootstrap failures', () => {
     expect(await screen.findByText('CUIL o contraseña incorrectos.')).toBeTruthy();
     await waitFor(() => expect(localStorage.getItem('sytec_access_token')).toBeNull());
   });
+
+  it('keeps the employee session without a bootstrap warning when personal page requests succeed', async () => {
+    const actor = userEvent.setup();
+    mocks.projectOptions.mockResolvedValue([]);
+    render(<App />);
+    await actor.type(await screen.findByLabelText('CUIL del Agente'), employee.cuil);
+    await actor.type(screen.getByLabelText('Contraseña'), 'valid-password');
+    await actor.click(screen.getByRole('button', { name: 'Ingresar al Sistema' }));
+
+    expect(await screen.findByText('Employee dashboard loaded')).toBeTruthy();
+    await waitFor(() => expect(mocks.licenseMyPage).toHaveBeenCalledWith({ page: 1, pageSize: 25 }));
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(localStorage.getItem('sytec_access_token')).toBe('valid-token');
+  });
 });

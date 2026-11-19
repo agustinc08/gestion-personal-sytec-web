@@ -332,7 +332,19 @@ test('employee bootstrap requests only bounded worklog, license, and attendance 
   await expect.poll(() => requests.some((request) => request.startsWith('dashboard/employee?'))).toBe(true);
   await expect.poll(() => requests.some((request) => request.startsWith('work-logs/my?') && /(page|year|month)=/.test(request))).toBe(true);
   await expect.poll(() => requests.some((request) => request.startsWith('licenses/my?') && /(page|from|to)=/.test(request))).toBe(true);
+  await expect.poll(() => requests.some((request) => request.startsWith('projects/my?'))).toBe(true);
   await expect.poll(() => requests.some((request) => request.startsWith('work-logs/attendance?') && /(page|year|month)=/.test(request))).toBe(true);
+  const queryFor = (path: string) => {
+    const request = requests.find((candidate) => candidate.startsWith(`${path}?`));
+    return new URLSearchParams(request?.split('?')[1] || '');
+  };
+  expect(queryFor('licenses/my').get('page')).toBe('1');
+  expect(queryFor('licenses/my').get('pageSize')).toBe('25');
+  expect(queryFor('projects/my').get('page')).toBe('1');
+  expect(queryFor('projects/my').get('pageSize')).toBe('25');
+  expect(queryFor('work-logs/my').get('page')).toBe('1');
+  expect(queryFor('work-logs/my').get('pageSize')).toBe('100');
+  await expect(page.getByText(/La sesión sigue activa, pero no se pudieron cargar/)).toHaveCount(0);
   const unboundedHistorical = requests.filter((request) => {
     const [path, query] = request.split('?');
     return ['work-logs', 'licenses', 'secondary-work-items', 'work-logs/attendance'].includes(path)

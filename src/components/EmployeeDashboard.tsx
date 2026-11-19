@@ -5,7 +5,7 @@ import { projectsApi } from '../api/projects.api';
 import { licensesApi } from '../api/licenses.api';
 import { DailyAttendance, Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, ActivityType, StatisticsResponse, SecondaryWorkItem } from '../types';
 import { activityTypeLabel, deploymentEnvironmentLabel, deploymentStatusLabel, difficultyLabel, licenseStatusLabel, projectStatusLabel } from '../utils/labels';
-import { addDaysDateOnly, formatDateOnlyArgentina, getArgentinaTodayDateOnly, isWithinEmployeeWorkLogEditWindow } from '../utils/date';
+import { addDaysDateOnly, formatDateOnlyArgentina, getArgentinaTodayDateOnly, getMonthDateOnlyRange, isWithinEmployeeWorkLogEditWindow } from '../utils/date';
 import { currentWorkdayStatus, getWorkdayStatus, requiresWorkLog } from '../utils/workday';
 import { copyWorkLogDraft, employeeDaySummary } from '../utils/employee-day';
 import { createLicenseRequestWithOptionalCertificate } from '../utils/license-submit';
@@ -288,7 +288,8 @@ export default function EmployeeDashboard({
   const dailyServerPage = useServerPagination(worklogsApi.myPage, { year: dailyYear, month: dailyMonth, employeeId: employee.id, mode: '', activityType: '', projectId: '' }, 100);
   const projectServerPage = useServerPagination(projectsApi.myPage, {});
   const licenseServerPage = useServerPagination(licensesApi.myPage, {});
-  const calendarLicensePage = useServerPagination(licensesApi.myPage, { from: `${dailyYear}-${dailyMonth.padStart(2, '0')}-01`, to: `${dailyYear}-${dailyMonth.padStart(2, '0')}-31`, status: 'aprobado' }, 100);
+  const calendarLicenseRange = getMonthDateOnlyRange(Number(dailyYear), Number(dailyMonth));
+  const calendarLicensePage = useServerPagination(licensesApi.myPage, { ...calendarLicenseRange, status: 'aprobado' }, 100);
   useEffect(() => {
     if (!editingWorkLogId || !logDate) {
       setApprovedLeaveOnLogDate(false);
@@ -309,9 +310,9 @@ export default function EmployeeDashboard({
   );
   useEffect(() => { selectedProjectWorkLogsPage.setFilter('projectId', selectedProjectId || ''); }, [selectedProjectId, selectedProjectWorkLogsPage.setFilter]);
   useEffect(() => {
-    calendarLicensePage.setFilter('from', `${dailyYear}-${dailyMonth.padStart(2, '0')}-01`);
-    calendarLicensePage.setFilter('to', `${dailyYear}-${dailyMonth.padStart(2, '0')}-31`);
-  }, [dailyYear, dailyMonth, calendarLicensePage.setFilter]);
+    calendarLicensePage.setFilter('from', calendarLicenseRange.from);
+    calendarLicensePage.setFilter('to', calendarLicenseRange.to);
+  }, [calendarLicenseRange.from, calendarLicenseRange.to, calendarLicensePage.setFilter]);
   useEffect(() => {
     const refreshPages = (event: Event) => {
       const scope = (event as CustomEvent<{ scope?: string }>).detail?.scope || 'all';

@@ -47,3 +47,10 @@ export function addDaysDateOnly(dateOnly: string, days: number) {
   const [year, month, day] = dateOnly.split('-').map(Number);
   return new Date(Date.UTC(year, month - 1, day + days, 12));
 }
+
+export function isWithinEmployeeWorkLogEditWindow(value: string, today = getArgentinaTodayDateOnly()) {
+  const date = parseDateOnlySafe(value);
+  if (!date || date !== value.slice(0, 10)) return false;
+  const start = formatDateOnlyArgentina(addDaysDateOnly(today, -6));
+  return date >= start && date <= today;
+}

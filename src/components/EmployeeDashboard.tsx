@@ -5,7 +5,7 @@ import { projectsApi } from '../api/projects.api';
 import { licensesApi } from '../api/licenses.api';
 import { DailyAttendance, Employee, WorkLog, Project, ProjectUpdate, LicenseRequest, LicenseRule, StrikeConfig, ActivityType, StatisticsResponse, SecondaryWorkItem } from '../types';
 import { activityTypeLabel, deploymentEnvironmentLabel, deploymentStatusLabel, difficultyLabel, licenseStatusLabel, projectStatusLabel } from '../utils/labels';
-import { getArgentinaTodayDateOnly } from '../utils/date';
+import { addDaysDateOnly, formatDateOnlyArgentina, getArgentinaTodayDateOnly, isWithinEmployeeWorkLogEditWindow } from '../utils/date';
 import { currentWorkdayStatus, getWorkdayStatus, requiresWorkLog } from '../utils/workday';
 import { copyWorkLogDraft, employeeDaySummary } from '../utils/employee-day';
 import { createLicenseRequestWithOptionalCertificate } from '../utils/license-submit';
@@ -160,6 +160,7 @@ export default function EmployeeDashboard({
   const [selectedCalendarDate, setSelectedCalendarDate] = useState(getArgentinaTodayDateOnly());
   const [isSavingWorkLog, setIsSavingWorkLog] = useState(false);
   const [editingWorkLogId, setEditingWorkLogId] = useState<string | null>(null);
+  const [approvedLeaveOnLogDate, setApprovedLeaveOnLogDate] = useState(false);
   const [isRefreshingDashboard, setIsRefreshingDashboard] = useState(false);
   const [refreshMessage, setRefreshMessage] = useState('');
   const workLogFormRef = useRef<HTMLDivElement>(null);
@@ -288,6 +289,19 @@ export default function EmployeeDashboard({
   const projectServerPage = useServerPagination(projectsApi.myPage, {});
   const licenseServerPage = useServerPagination(licensesApi.myPage, {});
   const calendarLicensePage = useServerPagination(licensesApi.myPage, { from: `${dailyYear}-${dailyMonth.padStart(2, '0')}-01`, to: `${dailyYear}-${dailyMonth.padStart(2, '0')}-31`, status: 'aprobado' }, 100);
+  useEffect(() => {
+    if (!editingWorkLogId || !logDate) {
+      setApprovedLeaveOnLogDate(false);
+      return;
+    }
+    let active = true;
+    licensesApi.myPage({ from: logDate, to: logDate, status: 'aprobado', page: 1, pageSize: 100 })
+      .then((page) => {
+        if (active) setApprovedLeaveOnLogDate(page.items.some((request) => request.article !== 'Guardia en Feria' && request.startDate.slice(0, 10) <= logDate && request.endDate.slice(0, 10) >= logDate));
+      })
+      .catch(() => { if (active) setApprovedLeaveOnLogDate(false); });
+    return () => { active = false; };
+  }, [editingWorkLogId, logDate]);
   const selectedProjectWorkLogsPage = useServerPagination(
     (filters, signal) => filters.projectId ? worklogsApi.myPage(filters, signal) : Promise.resolve({ items: [], page: 1, pageSize: 10, total: 0, totalPages: 1 }),
     { projectId: '' },
@@ -443,6 +457,7 @@ export default function EmployeeDashboard({
 
   const handleLogSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSavingWorkLog) return;
     if (!logTitle.trim() || !logDescription.trim()) {
       triggerAlert('error', 'Por favor, completá el título y la descripción del trabajo.');
       return;
@@ -462,7 +477,7 @@ export default function EmployeeDashboard({
     try {
       const payload = {
         employeeId: employee.id,
-        projectId: submittedProjectId || undefined,
+        projectId: workItemType === 'PROJECT' ? submittedProjectId || undefined : undefined,
         secondaryWorkItemId: submittedSecondaryWorkItemId || undefined,
         secondaryWorkItemName: submittedSecondaryWorkItemName || undefined,
         title: submittedTitle,
@@ -472,7 +487,10 @@ export default function EmployeeDashboard({
         activityType: logActivityType,
         hours: logHours ? Number(logHours) : undefined,
       };
-      if (editingWorkLogId) await onUpdateWorkLog(editingWorkLogId, payload);
+      if (editingWorkLogId) {
+        const { employeeId: _employeeId, ...updatePayload } = payload;
+        await onUpdateWorkLog(editingWorkLogId, workItemType === 'SECONDARY' ? { ...updatePayload, projectId: null } as Partial<WorkLog> : updatePayload);
+      }
       else await Promise.resolve(onAddWorkLog(payload));
 
       const wasEditing = !!editingWorkLogId;
@@ -489,7 +507,8 @@ export default function EmployeeDashboard({
         triggerAlert('success', wasEditing ? 'Parte diario actualizado correctamente.' : 'Trabajo diario registrado con éxito.');
       }
     } catch (error: any) {
-      triggerAlert('error', error?.response?.data?.message || 'No se pudieron guardar los cambios.');
+      const message = error?.response?.data?.message;
+      triggerAlert('error', Array.isArray(message) ? message.join(' ') : message || 'No se pudo actualizar el parte.');
     } finally {
       setIsSavingWorkLog(false);
     }
@@ -573,6 +592,9 @@ export default function EmployeeDashboard({
   const todayModeLabel = todaySummary.label;
   const nextProjectDeadline = myAssignedProjects.filter((project) => project.deadline && project.deadline.slice(0, 10) >= todayStr).sort((a, b) => a.deadline!.localeCompare(b.deadline!))[0];
   const workdayStatus = getWorkdayStatus(logDate, employee.remoteDaysAssigned, strikeConfig.nextDate);
+  const selectedDateWorkdayStatus = getWorkdayStatus(logDate, [], strikeConfig.nextDate === logDate || strikeConfig.lastDate === logDate ? logDate : undefined);
+  const selectedDateIsNonWorkday = selectedDateWorkdayStatus === 'WEEKEND' || selectedDateWorkdayStatus === 'STRIKE' || approvedLeaveOnLogDate;
+  const minimumEmployeeEditDate = formatDateOnlyArgentina(addDaysDateOnly(todayStr, -6));
   useEffect(() => {
     if (!editingWorkLogId && logDate >= todayStr && (workdayStatus === 'REMOTE' || workdayStatus === 'PRESENTIAL')) {
       setLogMode(workdayStatus === 'REMOTE' ? 'remoto' : 'presencial');
@@ -802,7 +824,8 @@ export default function EmployeeDashboard({
               </h3>
               <p className="mb-5 text-xs text-slate-500">Podés registrar varias actividades en el mismo día. Cada carga representa una tarea puntual.</p>
               {!editingWorkLogId && myWorkLogs.some((log) => log.date < todayStr) && <button type="button" onClick={copyPreviousWorkLog} className="mb-4 rounded-lg border px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Copiar parte anterior</button>}
-              {workdayStatus === 'REMOTE' || workdayStatus === 'PRESENTIAL' ? <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800">Modalidad automática para {logDate}: <strong>{workdayStatus === 'REMOTE' ? 'Remoto' : 'Presencial'}</strong>.</div> : <div className="mb-4 rounded-xl border p-3 text-xs">{workdayStatus === 'STRIKE' ? 'Paro: jornada no laborable.' : 'Fin de semana: jornada no laborable.'}</div>}
+              {editingWorkLogId ? <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800">Modalidad guardada en el parte: <strong>{modeLabels[logMode] || logMode}</strong>. La corrección de fecha no la recalcula.</div> : workdayStatus === 'REMOTE' || workdayStatus === 'PRESENTIAL' ? <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800">Modalidad automática para {logDate}: <strong>{workdayStatus === 'REMOTE' ? 'Remoto' : 'Presencial'}</strong>.</div> : <div className="mb-4 rounded-xl border p-3 text-xs">{workdayStatus === 'STRIKE' ? 'Paro: jornada no laborable.' : 'Fin de semana: jornada no laborable.'}</div>}
+              {editingWorkLogId && selectedDateIsNonWorkday && <div role="note" className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950">Advertencia: La fecha seleccionada corresponde a un día no laborable. El parte igualmente será registrado.</div>}
               {hasLogToday && !editingWorkLogId && <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800">Ya cargaste al menos una actividad hoy. Podés registrar otra si hiciste más tareas.</div>}
               
               <form onSubmit={handleLogSubmit} className="space-y-4">
@@ -968,6 +991,7 @@ export default function EmployeeDashboard({
                       type="date"
                       value={logDate}
                       onChange={(e) => setLogDate(e.target.value)}
+                      min={editingWorkLogId ? minimumEmployeeEditDate : undefined}
                       max={getArgentinaTodayDateOnly()}
                       className="w-full text-xs rounded-lg border border-gray-300 p-2 font-mono"
                     />
@@ -1112,7 +1136,7 @@ export default function EmployeeDashboard({
                           {log.activityType && <span className="bg-indigo-50 border border-indigo-100 text-indigo-700 rounded px-2 py-1">{activityTypeLabel(log.activityType)}</span>}
                           {log.hours !== undefined && <span className="bg-slate-50 border border-slate-200 text-slate-700 rounded px-2 py-1">{log.hours} h</span>}
                           {formatAttendanceTime(attendanceByDate[dayKey(log.date)]) && <span className="bg-blue-50 border border-blue-100 text-blue-700 rounded px-2 py-1">{formatAttendanceTime(attendanceByDate[dayKey(log.date)])}</span>}
-                          <button type="button" onClick={() => editWorkLog(log)} className="ml-auto rounded border border-indigo-200 bg-indigo-50 px-2 py-1 text-indigo-700">Editar</button>
+                          {log.employeeId === employee.id && isWithinEmployeeWorkLogEditWindow(log.date, todayStr) && <button type="button" onClick={() => editWorkLog(log)} className="ml-auto rounded border border-indigo-200 bg-indigo-50 px-2 py-1 text-indigo-700">Editar</button>}
                         </div>
                       </div>
                     );
